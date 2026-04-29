@@ -70,6 +70,10 @@
     #section-controls    { position: absolute; bottom: 8px;  left: 8px; }
     #lighting-controls   { position: absolute; bottom: 44px; left: 8px; }
     #help { position: absolute; bottom: 8px; right: 8px; background: rgba(255,255,255,0.85); padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #666; z-index: 5; }
+    /* Hide the desktop mouse-hint on touch devices (iPad). The hint
+       describes left-drag/right-drag/wheel which don't apply, and it
+       overlaps the Section / Measure controls on a narrow viewport. */
+    @media (hover: none), (pointer: coarse) { #help { display: none; } }
 
     body.aps-active #offline-canvas,
     body.aps-active #toolbar-top,
@@ -594,21 +598,72 @@
     }
 
     // ---------- Loaders (offline) ----------
-    function getVisibleBoundingBox(root) {
-      const box = new THREE.Box3();
-      if (!root) return box;
+    // Collect every visible, non-artifact mesh's world-space bounding box.
+    // Returns an array of THREE.Box3 instances in world coords.
+    function collectVisibleMeshBoxes(root) {
+      const out = [];
+      if (!root) return out;
       root.updateMatrixWorld(true);
       root.traverse((o) => {
         if (!o.isMesh || !o.geometry) return;
-        // walk up the ancestor chain: if any is invisible, skip
+        if (isArtifactDescendant(o)) return;
         let p = o, isHidden = false;
         while (p) { if (p.visible === false) { isHidden = true; break; } p = p.parent; }
         if (isHidden) return;
         o.geometry.computeBoundingBox?.();
         if (!o.geometry.boundingBox) return;
-        const b = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
-        box.union(b);
+        out.push(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
       });
+      return out;
+    }
+
+    // Build a robust bounding box from the visible meshes. Algorithm:
+    //   1. Compute the *unweighted* centroid (simple average of mesh centers).
+    //      Equal weighting beats volume weighting for FBX exports: a single
+    //      huge "site" or "shared-coordinates" reference mesh would otherwise
+    //      dominate the volume sum and pull COM toward the wrong place.
+    //   2. Compute the median distance from centroid.
+    //   3. Drop meshes whose center is more than 4× the median distance from
+    //      the centroid — this excludes origin markers and survey references
+    //      that sit thousands of meters away while the actual model clusters
+    //      tightly elsewhere.
+    //   4. Return the union bbox of the surviving (inlier) meshes.
+    function getVisibleBoundingBox(root) {
+      const boxes = collectVisibleMeshBoxes(root);
+      if (boxes.length === 0) return new THREE.Box3();
+      if (boxes.length < 4) {
+        const u = new THREE.Box3();
+        boxes.forEach((b) => u.union(b));
+        return u;
+      }
+
+      const centers = boxes.map((b) => b.getCenter(new THREE.Vector3()));
+
+      // 1. Unweighted centroid.
+      const centroid = new THREE.Vector3();
+      for (const c of centers) centroid.add(c);
+      centroid.divideScalar(boxes.length);
+
+      // 2. Median distance from centroid.
+      const dists = centers.map((c) => c.distanceTo(centroid));
+      const sortedDists = dists.slice().sort((a, b) => a - b);
+      const medianDist = sortedDists[Math.floor(sortedDists.length / 2)] || 0;
+
+      // 3. Cutoff: 4× median, with a small floor for tightly-clustered scenes
+      //    so we don't reject everything when meshes are nearly co-located.
+      const cutoff = Math.max(medianDist * 4, 1e-3);
+
+      // 4. Union bbox of inliers. Fall back to all boxes if rejection
+      //    eliminated too many meshes (defensive — shouldn't normally happen).
+      const box = new THREE.Box3();
+      let kept = 0;
+      for (let i = 0; i < boxes.length; i++) {
+        if (dists[i] <= cutoff) { box.union(boxes[i]); kept++; }
+      }
+      if (kept < 3 || box.isEmpty()) {
+        box.makeEmpty();
+        boxes.forEach((b) => box.union(b));
+      }
       return box;
     }
 
@@ -641,7 +696,10 @@
       st.camera.far  = Math.max(range * 1000, 100);
       st.camera.updateProjectionMatrix();
 
-      if (st === getActive()) { controls.target.copy(center); controls.update(); }
+      if (st === getActive()) {
+        controls.target.copy(center);
+        controls.update();
+      }
     }
 
     // Fit camera to ALL visible geometry in the current model (falls back to full bounds if nothing visible).
@@ -1105,24 +1163,31 @@
     // ---------- View presets ----------
     function setView(name) {
       const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
-      const box = new THREE.Box3().setFromObject(st.loadedObject); if (box.isEmpty()) return;
-      const size = box.getSize(new THREE.Vector3()).length() || 1;
-      const c = box.getCenter(new THREE.Vector3());
-      const d = size * 1.2;
-      let pos;
+      if (name === 'fit') { fitCamera(st); return; }
+
+      // Pure rotation: preserve the current orbit target and the current
+      // camera-to-target distance (i.e., zoom level). Only the view direction
+      // changes. Tap Fit explicitly if you want to also re-frame to the model.
+      const c = controls.target.clone();
+      const dist = st.camera.position.distanceTo(c) || 1;
+      let dir;
       switch (name) {
-        case 'front':  pos = new THREE.Vector3(c.x, c.y, c.z + d); break;
-        case 'back':   pos = new THREE.Vector3(c.x, c.y, c.z - d); break;
-        case 'top':    pos = new THREE.Vector3(c.x, c.y + d, c.z); break;
-        case 'bottom': pos = new THREE.Vector3(c.x, c.y - d, c.z); break;
-        case 'left':   pos = new THREE.Vector3(c.x - d, c.y, c.z); break;
-        case 'right':  pos = new THREE.Vector3(c.x + d, c.y, c.z); break;
-        case 'fit':    fitCamera(st); return;
-        default:       pos = new THREE.Vector3(c.x + d * 0.8, c.y + d * 0.6, c.z + d * 0.8);
+        case 'front':  dir = new THREE.Vector3( 0,  0,  1); break;
+        case 'back':   dir = new THREE.Vector3( 0,  0, -1); break;
+        case 'top':    dir = new THREE.Vector3( 0,  1,  0); break;
+        case 'bottom': dir = new THREE.Vector3( 0, -1,  0); break;
+        case 'left':   dir = new THREE.Vector3(-1,  0,  0); break;
+        case 'right':  dir = new THREE.Vector3( 1,  0,  0); break;
+        case 'iso':
+        default:       dir = new THREE.Vector3( 0.6, 0.5, 0.6).normalize(); break;
       }
-      st.camera.position.copy(pos);
+      st.camera.position.copy(c).addScaledVector(dir.normalize(), dist);
+      // Top/Bottom views need a non-Y up vector to avoid OrbitControls degeneracy.
+      if      (name === 'top')    st.camera.up.set(0, 0, -1);
+      else if (name === 'bottom') st.camera.up.set(0, 0,  1);
+      else                        st.camera.up.set(0, 1,  0);
       st.camera.lookAt(c);
-      controls.target.copy(c); controls.update();
+      controls.update();
     }
     document.getElementById('toolbar-views').addEventListener('click', guard((ev) => {
       if (ev.target.tagName === 'BUTTON') setView(ev.target.dataset.view);

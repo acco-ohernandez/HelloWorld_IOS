@@ -12,7 +12,8 @@ public partial class ViewerPage : ContentPage
     private readonly ViewerBridge _bridge;
     private bool _viewerReady;
     private string _theme = "light";
-    private bool _propertiesCollapsed;   // user-toggled override; defaults expanded in landscape
+    private bool _propertiesCollapsed;       // user-toggled state; sticks across rotations
+    private bool _orientationInitialized;    // guards the per-orientation default seed
 
     public ViewerPage(MainViewModel vm, TabFileStore store, PickedFileImporter importer)
     {
@@ -59,11 +60,17 @@ public partial class ViewerPage : ContentPage
 
     private void ApplyOrientationLayout()
     {
-        // Side panel shows when (a) landscape and (b) user hasn't manually
-        // collapsed it. Portrait still hides the panel for now — bottom-sheet
-        // UX comes later.
+        // Initial-load defaults: panel expanded in landscape, collapsed in
+        // portrait (320 pt is ~40% of an iPad in portrait, so collapsed feels
+        // right by default). After first layout, _propertiesCollapsed is the
+        // user's explicit toggle and survives rotations.
         var landscape = Width > Height && Width > 600;
-        var showPanel = landscape && !_propertiesCollapsed;
+        if (!_orientationInitialized && Width > 0 && Height > 0)
+        {
+            _propertiesCollapsed = !landscape;
+            _orientationInitialized = true;
+        }
+        var showPanel = !_propertiesCollapsed;
         BodyGrid.ColumnDefinitions[1].Width = new GridLength(showPanel ? 1 : 0);
         BodyGrid.ColumnDefinitions[2].Width = new GridLength(showPanel ? 320 : 0);
         UpdatePropertiesVisibility();
