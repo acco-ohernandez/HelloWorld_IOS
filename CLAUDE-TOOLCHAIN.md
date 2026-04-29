@@ -1,6 +1,8 @@
-# HelloWorld_IOS — MAUI iPad pipeline test
+# HelloWorld_IOS — Build & Deploy Toolchain Reference
 
-Proof-of-concept .NET MAUI 10 app validating the Windows-VS → Mac → iPad deployment pipeline. Successfully deployed to both iOS Simulator and physical iPad mini on 2026-04-27 with a free Apple ID. Project exists to validate the toolchain, not as production code.
+The hard-won institutional knowledge about how the **Windows-VS → Mac → iPad** pipeline for this project actually works: pairing, signing, free-tier provisioning, the 7-day cert expiry workaround, common breakages and their fixes. **This doc is the toolchain reference; for what the project does and how the code is structured, see [CLAUDE-VIEWER.md](CLAUDE-VIEWER.md).**
+
+The project began on 2026-04-27 as a Hello World pipeline test (which is where the toolchain knowledge below was captured). It became a real .NET MAUI iPad app — a 3D Model Viewer host — starting 2026-04-28; the toolchain documented here is unchanged through that transition. Bundle ID, signing identity, provisioning profile, Mac IP, and free-Apple-Developer-account constraints all carry over verbatim.
 
 ## Quick orientation
 
