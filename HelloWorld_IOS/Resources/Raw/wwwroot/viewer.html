@@ -1,0 +1,1455 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>3D Model Viewer</title>
+  <!-- Autodesk APS Viewer CSS + JS were here as static <link>/<script> tags.
+       Removed for offline-by-default. ensureApsSdk() lazily injects them on
+       first APS tab activation. See the module script below. -->
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; -webkit-touch-callout: none; -webkit-user-select: none; }
+    #app { display: grid; grid-template-columns: 260px 5px 1fr; height: 100%; }
+    #resizer { cursor: ew-resize; background: #e4e4e4; transition: background 80ms; user-select: none; }
+    #resizer:hover, #resizer.dragging { background: #7ab3ff; }
+    #app.collapsed #resizer { display: none; }
+    #app.collapsed { grid-template-columns: 28px 1fr; }
+
+    #tree-panel { display: flex; flex-direction: column; border-right: 1px solid #ccc; background: #fafafa; overflow: hidden; }
+    #tree-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: #eaeaea; border-bottom: 1px solid #ccc; font-weight: 600; }
+    #tree-collapse { border: none; background: transparent; cursor: pointer; font-size: 12px; padding: 2px 6px; }
+    #tree-search { margin: 6px 8px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; }
+    #tree-body { flex: 1; overflow-y: auto; padding: 4px 0; position: relative; }
+    #tree-actions { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid #ccc; background: #f0f0f0; }
+    #tree-actions button { flex: 1; padding: 4px 2px; font-size: 11px; cursor: pointer; border: 1px solid #bbb; border-radius: 3px; background: #fff; }
+    #tree-actions button:hover { background: #e8e8e8; }
+    #tree-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #tree-status { padding: 4px 8px; font-size: 11px; color: #888; border-top: 1px solid #ddd; background: #fafafa; }
+
+    .tree-node { display: flex; align-items: center; padding: 1px 4px 1px 0; cursor: pointer; white-space: nowrap; user-select: none; }
+    .tree-node:hover { background: #e0efff; }
+    .tree-node.selected { background: #cce4ff; }
+    .tree-node input[type=checkbox] { margin: 0 4px 0 0; }
+    .tree-toggle { display: inline-block; width: 14px; text-align: center; cursor: pointer; color: #666; }
+    .tree-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .tree-type { color: #888; margin-left: 6px; font-size: 10px; }
+
+    #ifc-filter-panel { padding: 6px 8px; border-top: 1px solid #ccc; background: #f5f5f5; }
+    #ifc-filter-panel summary { cursor: pointer; font-weight: 600; }
+    #ifc-filter-body { max-height: 180px; overflow-y: auto; margin-top: 6px; }
+    #ifc-filter-body label { display: block; padding: 2px 0; }
+
+    #app.collapsed #tree-search,
+    #app.collapsed #tree-body,
+    #app.collapsed #tree-actions,
+    #app.collapsed #tree-options,
+    #app.collapsed #ifc-filter-panel,
+    #app.collapsed #tree-status,
+    #app.collapsed #tree-header > span { display: none; }
+    #app.collapsed #tree-header { justify-content: center; padding: 6px 2px; }
+    #app.collapsed #tree-collapse { width: 22px; height: 22px; padding: 0; font-size: 14px; border: 1px solid #bbb; border-radius: 3px; background: #fff; }
+
+    #viewport { position: relative; overflow: hidden; }
+    #offline-canvas { position: absolute; inset: 0; }
+    #aps-canvas     { position: absolute; inset: 0; display: none; }
+    #placeholder    { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; pointer-events: none; }
+    #status         { position: absolute; top: 8px; left: 8px; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #333; display: none; box-shadow: 0 1px 2px rgba(0,0,0,0.1); z-index: 10; }
+
+    .overlay { background: rgba(255,255,255,0.92); padding: 6px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; z-index: 5; }
+    .overlay button { padding: 3px 8px; font-size: 11px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background: #f8f8f8; }
+    .overlay button:hover { background: #e8e8e8; }
+    .overlay label { font-size: 11px; color: #444; }
+    .overlay .sep { color: #aaa; margin: 0 2px; }
+    .overlay button.active { background: #7ab3ff; color: #fff; border-color: #5a9adf; }
+    #measure-label { font-weight: 600; color: #0a7; min-width: 80px; }
+    body.dark #measure-label { color: #7cf7c0; }
+    body.measuring #offline-canvas { cursor: crosshair; }
+
+    #toolbar-top { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; pointer-events: none; }
+    #toolbar-top > * { pointer-events: auto; position: static; }
+    #section-controls    { position: absolute; bottom: 8px;  left: 8px; }
+    #lighting-controls   { position: absolute; bottom: 44px; left: 8px; }
+    #help { position: absolute; bottom: 8px; right: 8px; background: rgba(255,255,255,0.85); padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #666; z-index: 5; }
+
+    body.aps-active #offline-canvas,
+    body.aps-active #toolbar-top,
+    body.aps-active #section-controls,
+    body.aps-active #lighting-controls,
+    body.aps-active #help,
+    body.aps-active #tree-panel,
+    body.aps-active #resizer { display: none; }
+    body.aps-active #aps-canvas { display: block; }
+    /* Escape the CSS grid entirely on APS tabs — the APS viewer measures its
+       container at init and can get stuck with zero-size if the grid tracks
+       were collapsed at that moment. Full-window absolute layout avoids that. */
+    body.aps-active #app { position: relative; }
+    body.aps-active #viewport { position: absolute; inset: 0; }
+
+    /* ---------- Dark theme ---------- */
+    body.dark                        { background: #1f1f1f; color: #ddd; }
+    body.dark #tree-panel            { background: #2a2a2a; color: #ddd; border-right-color: #444; }
+    body.dark #tree-header           { background: #1a1a1a; border-bottom-color: #444; color: #ddd; }
+    body.dark #tree-collapse         { color: #ddd; }
+    body.dark #tree-search           { background: #3a3a3a; color: #ddd; border-color: #555; }
+    body.dark #tree-actions          { background: #1a1a1a; border-top-color: #444; }
+    body.dark #tree-actions button   { background: #3a3a3a; border-color: #555; color: #ddd; }
+    body.dark #tree-actions button:hover  { background: #4a4a4a; }
+    body.dark .tree-node:hover       { background: #2d4055; }
+    body.dark .tree-node.selected    { background: #3a5570; }
+    body.dark .tree-toggle           { color: #bbb; }
+    body.dark .tree-type             { color: #888; }
+    body.dark #tree-status,
+    body.dark #ifc-filter-panel,
+    body.dark #tree-options          { background: #2a2a2a; color: #aaa; border-color: #444; }
+    body.dark #resizer               { background: #444; }
+    body.dark .overlay               { background: rgba(40,40,40,0.92); color: #ddd; }
+    body.dark .overlay label         { color: #ccc; }
+    body.dark .overlay button        { background: #3a3a3a; border-color: #555; color: #ddd; }
+    body.dark .overlay button:hover  { background: #4a4a4a; }
+    body.dark .overlay .sep          { color: #666; }
+    body.dark #placeholder           { color: #888; }
+    body.dark #help                  { background: rgba(40,40,40,0.85); color: #aaa; }
+    body.dark #status                { background: rgba(40,40,40,0.9); color: #ddd; }
+    body.dark #app.collapsed #tree-collapse { background: #3a3a3a; color: #ddd; border-color: #555; }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/build/three.module.js",
+      "three/examples/jsm/utils/BufferGeometryUtils": "./vendor/three/examples/jsm/utils/BufferGeometryUtils.js",
+      "web-ifc": "./vendor/web-ifc/web-ifc-api.js"
+    }
+  }
+  </script>
+
+  <script>
+    // ---- WebView2 / HybridWebView compatibility shim ---------------------------
+    // The viewer was originally built for WebView2 (window.chrome.webview).
+    // On iOS/MAUI we run inside HybridWebView, which exposes window.HybridWebView.
+    // This shim makes chrome.webview.postMessage / addEventListener route through
+    // HybridWebView when WebView2 isn't present. Runs synchronously before the
+    // first postHost() call below.
+    (function () {
+      if (window.chrome && window.chrome.webview) return;
+      var hwv = window.HybridWebView;
+      if (!hwv) {
+        // Standalone-browser preview (no host). No-op the bridge so the page
+        // still renders for debugging.
+        window.chrome = { webview: { postMessage: function () {}, addEventListener: function () {} } };
+        return;
+      }
+      var listeners = [];
+      function dispatch(rawString) {
+        var ev = { data: typeof rawString === 'string' ? rawString : JSON.stringify(rawString) };
+        for (var i = 0; i < listeners.length; i++) {
+          try { listeners[i](ev); } catch (e) { console.error('[bridge]', e); }
+        }
+      }
+      // MAUI HybridWebView delivers host->JS messages via a global function the
+      // page assigns. We assign it here. Also listen on the DOM event variants
+      // used by some MAUI builds.
+      hwv.MessageReceived = dispatch;
+      window.addEventListener('HybridWebViewMessageReceived', function (e) { dispatch(e.detail || e.data); });
+      window.addEventListener('HybridWebViewRawMessage',      function (e) { dispatch(e.detail || e.data); });
+      window.chrome = {
+        webview: {
+          postMessage: function (m) {
+            var s = typeof m === 'string' ? m : JSON.stringify(m);
+            try { hwv.SendRawMessage(s); }
+            catch (e) { console.error('[bridge] SendRawMessage failed:', e); }
+          },
+          addEventListener: function (name, handler) {
+            if (name === 'message') listeners.push(handler);
+          }
+        }
+      };
+    })();
+    // --------------------------------------------------------------------------
+
+    function postHost(msg) {
+      try { window.chrome.webview.postMessage(JSON.stringify(msg)); } catch (_) {}
+    }
+    function postErr(where, err, tabId) {
+      postHost({ type: 'jsError', tabId: tabId ?? null,
+        message: (err && (err.message || String(err))) || 'Unknown error',
+        filename: where, lineno: 0, stack: err && err.stack });
+    }
+    window.addEventListener('error', (ev) =>
+      postHost({ type: 'jsError', message: ev.message, filename: ev.filename, lineno: ev.lineno, stack: ev.error && ev.error.stack }));
+    window.addEventListener('unhandledrejection', (ev) =>
+      postHost({ type: 'jsError', message: 'Unhandled rejection: ' + ((ev.reason && ev.reason.message) || String(ev.reason)), stack: ev.reason && ev.reason.stack }));
+
+    function guard(fn, where) {
+      return function (...args) {
+        try { const r = fn.apply(this, args); if (r && typeof r.catch === 'function') r.catch((err) => postErr(where, err)); return r; }
+        catch (err) { postErr(where, err); }
+      };
+    }
+    window.__guard = guard;
+  </script>
+</head>
+<body>
+  <div id="app">
+    <aside id="tree-panel">
+      <div id="tree-header">
+        <span>Scene Tree</span>
+        <button id="tree-collapse" title="Collapse panel">◀</button>
+      </div>
+      <input id="tree-search" placeholder="Search by name..."/>
+      <div id="tree-body"></div>
+      <div id="tree-actions">
+        <button id="btn-isolate" disabled title="Hide everything except the selected node">Isolate</button>
+        <button id="btn-hide"    disabled title="Hide the selected node">Hide</button>
+        <button id="btn-show-all"         title="Make everything visible">Show All</button>
+      </div>
+      <label id="tree-options" style="display:flex; align-items:center; gap:4px; padding:4px 8px; font-size:11px; color:#555; border-top:1px solid #ddd;">
+        <input type="checkbox" id="cb-keep-view-isolate"/>
+        <span>Keep view on Isolate</span>
+      </label>
+      <details id="ifc-filter-panel" hidden>
+        <summary>IFC Type Filter</summary>
+        <div id="ifc-filter-body"></div>
+      </details>
+      <div id="tree-status">No tab active.</div>
+    </aside>
+
+    <div id="resizer" title="Drag to resize panel"></div>
+
+    <main id="viewport">
+      <div id="offline-canvas"></div>
+      <div id="aps-canvas"></div>
+      <div id="placeholder">Open a model to begin.</div>
+      <div id="status"></div>
+
+      <div id="toolbar-top">
+        <div id="toolbar-views" class="overlay">
+          <label><b>View:</b></label>
+          <button data-view="iso">ISO</button>
+          <button data-view="front">Front</button>
+          <button data-view="back">Back</button>
+          <button data-view="top">Top</button>
+          <button data-view="bottom">Bottom</button>
+          <button data-view="left">Left</button>
+          <button data-view="right">Right</button>
+          <button data-view="fit">Fit</button>
+        </div>
+
+        <div id="toolbar-rotate" class="overlay">
+          <label><b>Rotate model:</b></label>
+          <button data-rot="x+">X+</button><button data-rot="x-">X-</button>
+          <button data-rot="y+">Y+</button><button data-rot="y-">Y-</button>
+          <button data-rot="z+">Z+</button><button data-rot="z-">Z-</button>
+          <button data-rot="flip">Flip</button>
+          <span class="sep">|</span>
+          <button id="btn-bake-fbx" title="Flatten transforms + hide camera/light artifacts">Bake FBX</button>
+          <button id="btn-undo-bake" title="Restore the original (un-baked) scene" disabled>↶ Undo</button>
+        </div>
+      </div>
+
+      <div id="lighting-controls" class="overlay">
+        <label><b>Lighting:</b></label>
+        <select id="light-preset" title="Choose a lighting preset">
+          <option value="neutral" selected>Neutral</option>
+          <option value="studio">Studio</option>
+          <option value="outdoor">Outdoor</option>
+          <option value="headlight">Headlight</option>
+        </select>
+        <label>Az:</label>
+        <input type="range" id="light-az" min="0" max="360" value="45" step="1" style="width:80px;" title="Azimuth (degrees)"/>
+        <label>El:</label>
+        <input type="range" id="light-el" min="-30" max="90" value="45" step="1" style="width:80px;" title="Elevation (degrees)"/>
+      </div>
+
+      <div id="section-controls" class="overlay">
+        <label><input type="checkbox" id="sec-toggle"/>Section</label>
+        <select id="sec-axis">
+          <option value="x">X</option>
+          <option value="y" selected>Y</option>
+          <option value="z">Z</option>
+        </select>
+        <input type="range" id="sec-slider" min="0" max="1000" value="500" style="width:140px;"/>
+        <button id="sec-flip" title="Flip cut direction">↔</button>
+        <span class="sep">|</span>
+        <button id="btn-measure" title="Click two points to measure distance">📏 Measure</button>
+        <span id="measure-label"></span>
+      </div>
+
+      <div id="help"><b>Left-drag</b>: orbit &nbsp;|&nbsp; <b>Right-drag</b>: pan &nbsp;|&nbsp; <b>Wheel</b>: zoom</div>
+    </main>
+  </div>
+
+  <!-- Autodesk APS Viewer SDK is now loaded lazily by ensureApsSdk() in the
+       module script below. This keeps offline-only sessions from hitting the
+       network at all. -->
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from './vendor/three/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader }    from './vendor/three/examples/jsm/loaders/GLTFLoader.js';
+    import { OBJLoader }     from './vendor/three/examples/jsm/loaders/OBJLoader.js';
+    import { MTLLoader }     from './vendor/three/examples/jsm/loaders/MTLLoader.js';
+    import { FBXLoader }     from './vendor/three/examples/jsm/loaders/FBXLoader.js';
+    import { STLLoader }     from './vendor/three/examples/jsm/loaders/STLLoader.js';
+    import { IFCLoader }     from './vendor/web-ifc-three/IFCLoader.js';
+
+    const guard = window.__guard;
+
+    // ---------- DOM refs ----------
+    const app          = document.getElementById('app');
+    const offlineCt    = document.getElementById('offline-canvas');
+    const apsCt        = document.getElementById('aps-canvas');
+    const placeholder  = document.getElementById('placeholder');
+    const statusEl     = document.getElementById('status');
+    const treeBody     = document.getElementById('tree-body');
+    const treeSearch   = document.getElementById('tree-search');
+    const treeStatus   = document.getElementById('tree-status');
+    const treeCollapse = document.getElementById('tree-collapse');
+    const btnIsolate   = document.getElementById('btn-isolate');
+    const btnHide      = document.getElementById('btn-hide');
+    const btnShowAll   = document.getElementById('btn-show-all');
+    const ifcPanel     = document.getElementById('ifc-filter-panel');
+    const ifcBody      = document.getElementById('ifc-filter-body');
+    const secToggle    = document.getElementById('sec-toggle');
+    const secAxis      = document.getElementById('sec-axis');
+    const secSlider    = document.getElementById('sec-slider');
+    const secFlip      = document.getElementById('sec-flip');
+
+    function setStatus(t) { statusEl.textContent = t; statusEl.style.display = t ? 'block' : 'none'; }
+    function setTreeStatus(t) { treeStatus.textContent = t; }
+
+    // ---------- Shared three.js renderer + controls ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.localClippingEnabled = true;
+    offlineCt.appendChild(renderer.domElement);
+
+    const dummyCam = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
+    dummyCam.position.set(10, 10, 10);
+    const controls = new OrbitControls(dummyCam, renderer.domElement);
+    controls.enableDamping = true;
+    // Touch convention for iPad: 1-finger orbit, 2-finger pinch-zoom + pan.
+    // Matches CAD/AEC desktop intuition; tap-to-select still uses the
+    // pointerdown/up movement-threshold check elsewhere in this file.
+    controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+    function resizeRenderer() {
+      const w = offlineCt.clientWidth, h = offlineCt.clientHeight;
+      renderer.setSize(w, h, false);
+      const st = getActive();
+      if (st && st.camera) { st.camera.aspect = (w || 1) / (h || 1); st.camera.updateProjectionMatrix(); }
+    }
+    const ro = new ResizeObserver(guard(resizeRenderer, 'resize'));
+    ro.observe(offlineCt);
+
+    const raycaster = new THREE.Raycaster();
+    const mouse     = new THREE.Vector2();
+
+    // ---------- Theme state (session-only) ----------
+    let currentTheme = 'light';
+    const THEME_COLORS = {
+      light: { bg: 0xeeeeee, gridMajor: 0xcccccc, gridMinor: 0xdddddd },
+      dark:  { bg: 0x1f1f1f, gridMajor: 0x555555, gridMinor: 0x3a3a3a },
+    };
+
+    // ---------- Lighting state (shared across all offline tabs) ----------
+    let lightingPreset = 'neutral';   // 'neutral' | 'studio' | 'outdoor' | 'headlight'
+    let lightAzimuth   = 45;          // degrees, 0 = +X
+    let lightElevation = 45;          // degrees, 90 = straight above
+
+    function positionLight(light, azDeg, elDeg, distance = 100) {
+      const az = azDeg * Math.PI / 180;
+      const el = elDeg * Math.PI / 180;
+      light.position.set(
+        distance * Math.cos(el) * Math.cos(az),
+        distance * Math.sin(el),
+        distance * Math.cos(el) * Math.sin(az)
+      );
+    }
+
+    function applyLightingToScene(st) {
+      if (!st || st.mode !== 'offline' || !st.scene) return;
+      // Remove previous app-owned lights
+      const toRemove = [];
+      st.scene.children.forEach((o) => { if (o.userData && o.userData.isAppLight) toRemove.push(o); });
+      toRemove.forEach((l) => st.scene.remove(l));
+
+      const add = (light) => { light.userData.isAppLight = true; st.scene.add(light); return light; };
+
+      switch (lightingPreset) {
+        case 'studio': {
+          add(new THREE.AmbientLight(0xffffff, 0.22));
+          const key  = new THREE.DirectionalLight(0xffffff, 0.95);
+          positionLight(key,  lightAzimuth,              lightElevation);                  add(key);
+          const fill = new THREE.DirectionalLight(0xffffff, 0.40);
+          positionLight(fill, lightAzimuth + 140, Math.max(10, lightElevation - 20));      add(fill);
+          const rim  = new THREE.DirectionalLight(0xffffff, 0.35);
+          positionLight(rim,  lightAzimuth - 160, Math.max(0,  lightElevation - 10));      add(rim);
+          break;
+        }
+        case 'outdoor': {
+          add(new THREE.HemisphereLight(0xaad4ff, 0xc0a080, 0.6));
+          const sun = new THREE.DirectionalLight(0xfff4d6, 0.95);
+          positionLight(sun, lightAzimuth, lightElevation);                                add(sun);
+          break;
+        }
+        case 'headlight': {
+          add(new THREE.AmbientLight(0xffffff, 0.20));
+          const h = new THREE.DirectionalLight(0xffffff, 1.0);
+          h.userData.isHeadlight = true;   // updated per-frame in animate()
+          add(h);
+          break;
+        }
+        case 'neutral':
+        default: {
+          add(new THREE.AmbientLight(0xffffff, 0.35));
+          const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+          positionLight(dir, lightAzimuth, lightElevation);                                add(dir);
+          break;
+        }
+      }
+    }
+
+    function applyLightingToAllTabs() {
+      for (const st of tabs.values()) applyLightingToScene(st);
+    }
+
+    // ---------- Tab state ----------
+    class TabState {
+      constructor(tabId, mode) {
+        this.tabId = tabId;
+        this.mode  = mode;             // 'offline' | 'aps'
+        if (mode === 'offline') {
+          const tc = THEME_COLORS[currentTheme];
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(tc.bg);
+          this.grid = new THREE.GridHelper(50, 50, tc.gridMajor, tc.gridMinor);
+          this.scene.add(this.grid);
+          applyLightingToScene(this);   // adds preset-based lights (tagged isAppLight)
+          this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
+          this.camera.position.set(10, 10, 10);
+          this.loadedObject = null;
+          this.bakeBackup   = null;   // pre-bake loadedObject, detached from scene
+          this.nodeIndex    = [];
+          this.selectedIds  = new Set();
+          this.lastSelId    = null;   // anchor for Shift+click ranges; last clicked
+          this.ifcModelID   = null;
+          this.hiddenIfcSubsets = new Map();
+          this.clipActive   = false;
+          this.clipAxis     = 'y';
+          this.clipSlider   = 500;
+          this.clipDir      = 1;
+          this.clipPlane    = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+          this.clipRange    = { min: -10, max: 10 };
+          this.cameraState  = null;
+          this.measure      = { active: false, points: [], group: null };
+        } else {
+          // APS
+          this.urn = null; this.token = null;
+          this.apsCameraState = null;   // snapshot from apsViewer.getState for resume-on-switch
+        }
+      }
+      dispose() {
+        if (this.mode !== 'offline') return;
+        const disposeTree = (root) => root?.traverse?.((o) => {
+          o.geometry?.dispose();
+          const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+          mats.forEach((m) => m.dispose?.());
+        });
+        disposeTree(this.loadedObject);
+        disposeTree(this.bakeBackup);
+        if (this.measure?.group) disposeTree(this.measure.group);
+        this.hiddenIfcSubsets.forEach((s) => s && s.geometry?.dispose());
+        // Release IFC model from the shared web-ifc manager so wasm memory doesn't accumulate
+        if (ifcLoader && this.ifcModelID !== null) {
+          try { ifcLoader.ifcManager.close?.(this.ifcModelID); } catch (_) {}
+        }
+      }
+    }
+
+    const tabs = new Map();
+    let activeTabId = null;
+    function getActive() { return activeTabId != null ? tabs.get(activeTabId) : null; }
+    function isOfflineActive() { const st = getActive(); return !!st && st.mode === 'offline'; }
+
+    function applyTheme(theme) {
+      if (theme !== 'light' && theme !== 'dark') return;
+      currentTheme = theme;
+      document.body.classList.toggle('dark', theme === 'dark');
+      const tc = THEME_COLORS[theme];
+      for (const st of tabs.values()) {
+        if (st.mode !== 'offline') continue;
+        st.scene.background = new THREE.Color(tc.bg);
+        if (st.grid) {
+          st.scene.remove(st.grid);
+          st.grid.geometry?.dispose();
+          const mats = Array.isArray(st.grid.material) ? st.grid.material : [st.grid.material];
+          mats.forEach((m) => m?.dispose?.());
+        }
+        st.grid = new THREE.GridHelper(50, 50, tc.gridMajor, tc.gridMinor);
+        st.scene.add(st.grid);
+      }
+    }
+
+    // ---------- Shared IFC loader ----------
+    let ifcLoader = null;
+    async function getIfcLoader() {
+      if (!ifcLoader) {
+        ifcLoader = new IFCLoader();
+        await ifcLoader.ifcManager.setWasmPath('./vendor/web-ifc/', true);
+      }
+      return ifcLoader;
+    }
+
+    // ---------- APS viewer (singleton, reused across APS tabs) ----------
+    let apsViewer = null;
+    let apsInitialized = false;
+    let currentApsTabId = null;
+
+    // Lazy-load the Autodesk APS Viewer SDK (CSS + JS) only when first needed.
+    // Cached as a single Promise so concurrent callers wait on the same load.
+    let _apsSdkPromise = null;
+    function ensureApsSdk() {
+      if (window.Autodesk && window.Autodesk.Viewing) return Promise.resolve();
+      if (_apsSdkPromise) return _apsSdkPromise;
+      _apsSdkPromise = new Promise((resolve, reject) => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css';
+        document.head.appendChild(link);
+        const script = document.createElement('script');
+        script.src = 'https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js';
+        script.onload = () => resolve();
+        script.onerror = (e) => reject(new Error('Failed to load Autodesk APS Viewer SDK (offline?)'));
+        document.head.appendChild(script);
+      });
+      return _apsSdkPromise;
+    }
+
+    function initApsViewer(token, cb) {
+      ensureApsSdk().then(() => {
+        const options = { env: 'AutodeskProduction2', api: 'streamingV2',
+                          getAccessToken: (onTokenReady) => onTokenReady(token, 3600) };
+        Autodesk.Viewing.Initializer(options, () => {
+          apsInitialized = true;
+          if (!apsViewer) {
+            apsViewer = new Autodesk.Viewing.GuiViewer3D(apsCt);
+            apsViewer.start();
+            apsViewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, (ev) => {
+              const dbId = ev.dbIdArray && ev.dbIdArray[0];
+              if (typeof dbId === 'number' && currentApsTabId != null) {
+                postHost({ type: 'selection', tabId: currentApsTabId, dbId });
+              }
+            });
+          }
+          cb();
+        });
+      }).catch((err) => { postErr('aps-sdk-load', err, currentApsTabId); setStatus('APS SDK load failed (offline?)'); });
+    }
+    function loadApsTab(tabId, urn, token) {
+      currentApsTabId = tabId;
+      const go = () => {
+        // Unload any previously loaded model so memory doesn't accumulate across APS tab switches
+        try {
+          const models = apsViewer.getVisibleModels?.() || [];
+          for (const m of models) {
+            try { apsViewer.unloadModel(m); } catch (_) {}
+          }
+        } catch (_) {}
+
+        // Give the browser TWO frames to pick up the container's new size after CSS changes
+        // (single RAF sometimes fires before the browser has reflowed after class changes).
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const w = apsCt.clientWidth, h = apsCt.clientHeight;
+          postHost({ type: 'apsDiag', msg: `pre-load apsCt=${w}x${h}` });
+          try { apsViewer.resize(); } catch (_) {}
+
+          Autodesk.Viewing.Document.load('urn:' + urn, (doc) => {
+            const m = doc.getRoot().getDefaultGeometry();
+            apsViewer.loadDocumentNode(doc, m)
+              .then(() => {
+                const w2 = apsCt.clientWidth, h2 = apsCt.clientHeight;
+                postHost({ type: 'apsDiag', msg: `post-load apsCt=${w2}x${h2}` });
+                try {
+                  apsViewer.resize();
+                  apsViewer.impl?.invalidate?.(true, true, true);
+                  // If this tab has a saved camera (from a previous switch-away), restore
+                  // it so the user returns to the exact view they had, not APS's home view.
+                  const st = tabs.get(tabId);
+                  if (st && st.apsCameraState) {
+                    try { apsViewer.restoreState(st.apsCameraState, { viewport: true }, true /*immediate*/); }
+                    catch (e) { postHost({ type: 'apsDiag', msg: 'restoreState err: ' + e.message }); }
+                  }
+                } catch (e) { postHost({ type: 'apsDiag', msg: 'resize err: ' + e.message }); }
+                postHost({ type: 'loaded', tabId });
+              })
+              .catch((err) => { postErr('aps-load-model', err, tabId); setStatus('APS load failed.'); });
+          }, (code, msg) => {
+            postErr('aps-doc-load', new Error(`[${code}] ${msg}`), tabId);
+            setStatus('APS error: ' + msg);
+          });
+        }));
+      };
+      if (!apsInitialized) initApsViewer(token, go); else go();
+    }
+
+    // ---------- Loaders (offline) ----------
+    function getVisibleBoundingBox(root) {
+      const box = new THREE.Box3();
+      if (!root) return box;
+      root.updateMatrixWorld(true);
+      root.traverse((o) => {
+        if (!o.isMesh || !o.geometry) return;
+        // walk up the ancestor chain: if any is invisible, skip
+        let p = o, isHidden = false;
+        while (p) { if (p.visible === false) { isHidden = true; break; } p = p.parent; }
+        if (isHidden) return;
+        o.geometry.computeBoundingBox?.();
+        if (!o.geometry.boundingBox) return;
+        const b = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+        box.union(b);
+      });
+      return box;
+    }
+
+    // Frames the camera on a bounding box, preserving the current view direction.
+    // Distance is computed from the camera's FOV + aspect so the box exactly fills
+    // the viewport with a small margin (no ISO-snap on Fit).
+    function frameCameraToBox(st, box, margin = 1.08) {
+      if (!box || box.isEmpty()) return;
+      const size = new THREE.Vector3();   box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const fov = st.camera.fov * Math.PI / 180;
+      const aspect = st.camera.aspect || 1;
+      // Distance required to fit the largest dimension vertically AND horizontally.
+      const distV = (maxDim / 2) / Math.tan(fov / 2);
+      const distH = distV / Math.max(aspect, 0.0001);
+      const dist  = Math.max(distV, distH) * margin;
+
+      // Keep the current view direction (camera -> target vector, normalized).
+      const dir = new THREE.Vector3();
+      if (st === getActive()) dir.subVectors(st.camera.position, controls.target);
+      else                    dir.subVectors(st.camera.position, center);
+      if (dir.lengthSq() < 1e-10) dir.set(1, 1, 1);   // fallback to ISO for a degenerate view
+      dir.normalize();
+
+      st.camera.position.copy(center).addScaledVector(dir, dist);
+      const range = box.getSize(new THREE.Vector3()).length() || 1;
+      st.camera.near = Math.max(range / 10000, 0.0001);
+      st.camera.far  = Math.max(range * 1000, 100);
+      st.camera.updateProjectionMatrix();
+
+      if (st === getActive()) { controls.target.copy(center); controls.update(); }
+    }
+
+    // Fit camera to ALL visible geometry in the current model (falls back to full bounds if nothing visible).
+    function fitCamera(st) {
+      if (!st.loadedObject) return;
+      let box = getVisibleBoundingBox(st.loadedObject);
+      if (box.isEmpty()) box = new THREE.Box3().setFromObject(st.loadedObject);
+      if (box.isEmpty()) return;
+      frameCameraToBox(st, box);
+      st.clipRange = { min: box.min[st.clipAxis], max: box.max[st.clipAxis] };
+      applyClipPlane(st);
+    }
+
+    // Fit camera to a specific Object3D (mesh or group).
+    function fitCameraToObject(st, obj) {
+      const box = new THREE.Box3().setFromObject(obj);
+      if (box.isEmpty()) return;
+      frameCameraToBox(st, box, 1.6);
+    }
+
+    // Just re-center the orbit pivot on an object without moving the camera.
+    function focusOnObject(st, obj) {
+      const box = new THREE.Box3().setFromObject(obj);
+      if (box.isEmpty()) return;
+      const center = box.getCenter(new THREE.Vector3());
+      if (st === getActive()) { controls.target.copy(center); controls.update(); }
+    }
+
+    function buildIndex(st) {
+      st.nodeIndex = []; st.selectedIds = new Set(); st.lastSelId = null;
+      if (!st.loadedObject) return;
+      let id = 0;
+      (function walk(obj, depth, parentId) {
+        const myId = id++;
+        st.nodeIndex.push({ id: myId, parentId, object3d: obj, depth, expanded: depth < 2 });
+        for (const c of obj.children || []) walk(c, depth + 1, myId);
+      })(st.loadedObject, 0, -1);
+    }
+
+    function finishOffline(st, obj, isIfc) {
+      if (st.loadedObject) { st.scene.remove(st.loadedObject); disposeTree(st.loadedObject); }
+      if (st.bakeBackup)   { disposeTree(st.bakeBackup); st.bakeBackup = null; updateBakeButtons(st); }
+      if (st.measure) { clearMeasure(st); st.measure.active = false; updateMeasureUi(st); }
+      st.loadedObject = obj;
+      st.scene.add(st.loadedObject);
+      fitCamera(st);
+      buildIndex(st);
+      if (st === getActive()) { renderTree(); }
+      if (isIfc && st === getActive()) buildIfcFilterAsync(st).catch((e) => postErr('ifc-filter', e, st.tabId));
+      setStatus('');
+      placeholder.style.display = 'none';
+      postHost({ type: 'loaded', tabId: st.tabId });
+    }
+    function failLoad(tabId, err) {
+      setStatus('Error: ' + (err?.message || err));
+      postErr('load', err, tabId);
+      postHost({ type: 'loadEnd', tabId });
+    }
+    function mkProgress(tabId) {
+      return (xhr) => {
+        if (!xhr) return;
+        const total = xhr.total || xhr.lengthComputable && xhr.total;
+        if (total > 0) {
+          const pct = Math.min(99, Math.round((xhr.loaded / total) * 100));
+          postHost({ type: 'loadProgress', tabId, percent: pct });
+        }
+      };
+    }
+
+    async function loadObjWithMtl(st, url) {
+      const mtlUrl = url.replace(/\.obj(\?.*)?$/i, '.mtl');
+      const onProg = mkProgress(st.tabId);
+      try {
+        const head = await fetch(mtlUrl, { method: 'HEAD' });
+        if (head.ok) {
+          const materials = await new Promise((res, rej) => new MTLLoader().load(mtlUrl, res, undefined, rej));
+          materials.preload();
+          new OBJLoader().setMaterials(materials).load(url, (o) => finishOffline(st, o, false), onProg, (e) => failLoad(st.tabId, e));
+          return;
+        }
+      } catch (_) { /* fall through */ }
+      new OBJLoader().load(url, (o) => finishOffline(st, o, false), onProg, (e) => failLoad(st.tabId, e));
+    }
+    async function loadIfc(st, url) {
+      const ldr = await getIfcLoader();
+      ldr.load(url, (model) => { st.ifcModelID = model.modelID; finishOffline(st, model, true); },
+        mkProgress(st.tabId), (e) => failLoad(st.tabId, e));
+    }
+
+    function loadOfflineFile(st, url, format) {
+      placeholder.style.display = 'none';
+      setStatus('Loading ' + format.toUpperCase() + '...');
+      postHost({ type: 'loadStart', tabId: st.tabId, format });
+      const fmt = format.toLowerCase();
+      const onProg = mkProgress(st.tabId);
+      try {
+        if (fmt === 'gltf' || fmt === 'glb') new GLTFLoader().load(url, (g) => finishOffline(st, g.scene, false), onProg, (e) => failLoad(st.tabId, e));
+        else if (fmt === 'obj') loadObjWithMtl(st, url);
+        else if (fmt === 'fbx') new FBXLoader().load(url, (o) => finishOffline(st, o, false), onProg, (e) => failLoad(st.tabId, e));
+        else if (fmt === 'stl') new STLLoader().load(url, (g) => {
+          g.computeVertexNormals();
+          const mat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.1, roughness: 0.7 });
+          finishOffline(st, new THREE.Mesh(g, mat), false);
+        }, onProg, (e) => failLoad(st.tabId, e));
+        else if (fmt === 'ifc') loadIfc(st, url);
+        else failLoad(st.tabId, new Error('Unsupported format: ' + format));
+      } catch (err) { failLoad(st.tabId, err); }
+    }
+
+    // ---------- Tab management ----------
+    function createTab(tabId, mode) {
+      if (tabs.has(tabId)) return;
+      tabs.set(tabId, new TabState(tabId, mode));
+    }
+    function closeTab(tabId) {
+      const st = tabs.get(tabId);
+      if (!st) return;
+      st.dispose();
+      tabs.delete(tabId);
+      if (activeTabId === tabId) { activeTabId = null; updateUiFromActiveTab(); }
+    }
+    function switchTab(tabId) {
+      if (!tabs.has(tabId)) return;
+      // Save camera of the previous active tab
+      const prev = getActive();
+      if (prev && prev.mode === 'offline') {
+        prev.cameraState = { pos: prev.camera.position.clone(), target: controls.target.clone() };
+      } else if (prev && prev.mode === 'aps' && apsViewer) {
+        // Snapshot the APS viewer's camera + viewport state so we can restore it
+        // when the user comes back to this tab (see loadApsTab post-load handler).
+        try { prev.apsCameraState = apsViewer.getState({ viewport: true }); } catch (_) {}
+      }
+      activeTabId = tabId;
+      const st = getActive();
+      if (st.mode === 'offline') {
+        document.body.classList.remove('aps-active');
+        // Restore the expanded / collapsed layout chosen for offline mode
+        app.style.gridTemplateColumns = app.classList.contains('collapsed') ? '28px 1fr' : expandedCols;
+        controls.object = st.camera;
+        controls.enabled = true;
+        if (st.cameraState) {
+          st.camera.position.copy(st.cameraState.pos);
+          controls.target.copy(st.cameraState.target);
+        }
+        applyClipPlane(st);
+        resizeRenderer();
+      } else {
+        document.body.classList.add('aps-active');
+        controls.enabled = false;
+        if (st.urn && st.token) { loadApsTab(tabId, st.urn, st.token); }
+      }
+      updateUiFromActiveTab();
+    }
+    function updateUiFromActiveTab() {
+      const st = getActive();
+      if (!st) {
+        setTreeStatus('No tab active.');
+        placeholder.style.display = 'flex'; placeholder.textContent = 'Open a model to begin.';
+        treeBody.innerHTML = ''; ifcBody.innerHTML = ''; ifcPanel.hidden = true;
+        updateActionButtons();
+        document.body.classList.remove('aps-active');
+        return;
+      }
+      if (st.mode === 'offline') {
+        setTreeStatus(`${st.nodeIndex.length.toLocaleString()} nodes`);
+        placeholder.style.display = st.loadedObject ? 'none' : 'flex';
+        if (!st.loadedObject) placeholder.textContent = 'Open a model to begin.';
+        secToggle.checked = st.clipActive;
+        secAxis.value     = st.clipAxis;
+        secSlider.value   = st.clipSlider;
+        secFlip.dataset.dir = String(st.clipDir);
+        renderTree();
+      } else {
+        setTreeStatus('APS tab (tree not available)');
+        treeBody.innerHTML = ''; ifcBody.innerHTML = ''; ifcPanel.hidden = true;
+      }
+      updateActionButtons();
+      updateBakeButtons(st);
+      updateMeasureUi(st);
+    }
+
+    // ---------- Render loop ----------
+    // Cached empty scene used when no offline tab is active. Without this the
+    // last rendered frame stays painted on the WebGL canvas even after the tab
+    // is closed, which looks like the model is still loaded.
+    const _emptyScene  = new THREE.Scene();
+    const _emptyCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    function clearCanvasToBackground() {
+      // Match the active theme's background so the canvas blends with the page.
+      const tc = THEME_COLORS[currentTheme] || THEME_COLORS.light;
+      _emptyScene.background = new THREE.Color(tc.bg);
+      renderer.render(_emptyScene, _emptyCamera);
+    }
+
+    (function animate() {
+      requestAnimationFrame(animate);
+      try {
+        const st = getActive();
+        if (!st || st.mode !== 'offline' || !st.loadedObject) {
+          // Paint a cleared frame so a freshly closed tab doesn't leave its
+          // last render on screen.
+          clearCanvasToBackground();
+          return;
+        }
+        controls.update();
+        // Headlight: make the primary directional follow the camera each frame
+        if (lightingPreset === 'headlight') {
+          for (const child of st.scene.children) {
+            if (child.userData?.isHeadlight) { child.position.copy(st.camera.position); break; }
+          }
+        }
+        renderer.render(st.scene, st.camera);
+      } catch (err) { postErr('animate', err); }
+    })();
+
+    // ---------- Tree (virtualized) ----------
+    const ROW_H = 20;
+    let filteredIds = [];
+    function nodeName(n) { return n.object3d.name || n.object3d.type || `#${n.id}`; }
+    function nodeType(n) { return n.object3d.type || ''; }
+    function applyFilter() {
+      const st = getActive(); if (!st || st.mode !== 'offline') { filteredIds = []; return; }
+      const q = (treeSearch.value || '').trim().toLowerCase();
+      filteredIds = [];
+      if (!q) {
+        for (const n of st.nodeIndex) {
+          let visible = true;
+          let p = n.parentId;
+          while (p !== -1) {
+            const parent = st.nodeIndex[p];
+            if (!parent.expanded) { visible = false; break; }
+            p = parent.parentId;
+          }
+          if (visible) filteredIds.push(n.id);
+        }
+      } else {
+        for (const n of st.nodeIndex) if (nodeName(n).toLowerCase().includes(q)) filteredIds.push(n.id);
+      }
+    }
+    function renderTree() {
+      applyFilter();
+      const st = getActive();
+      const total  = filteredIds.length;
+      const scrollTop = treeBody.scrollTop;
+      const height    = treeBody.clientHeight || 300;
+      const first = Math.max(0, Math.floor(scrollTop / ROW_H) - 5);
+      const last  = Math.min(total, Math.ceil((scrollTop + height) / ROW_H) + 5);
+
+      const frag = document.createDocumentFragment();
+      const topSpacer = document.createElement('div');
+      topSpacer.style.height = (first * ROW_H) + 'px';
+      frag.appendChild(topSpacer);
+
+      for (let i = first; i < last; i++) {
+        const n = st.nodeIndex[filteredIds[i]];
+        frag.appendChild(renderRow(st, n));
+      }
+
+      const bottomSpacer = document.createElement('div');
+      bottomSpacer.style.height = Math.max(0, (total - last) * ROW_H) + 'px';
+      frag.appendChild(bottomSpacer);
+
+      treeBody.innerHTML = '';
+      treeBody.appendChild(frag);
+      setTreeStatus(`${(st ? st.nodeIndex.length : 0).toLocaleString()} nodes`);
+    }
+    function renderRow(st, n) {
+      const row = document.createElement('div');
+      row.className = 'tree-node' + (st.selectedIds.has(n.id) ? ' selected' : '');
+      row.style.paddingLeft = (4 + n.depth * 10) + 'px';
+      row.dataset.id = n.id;
+      const hasChildren = (n.object3d.children?.length || 0) > 0;
+
+      const toggle = document.createElement('span');
+      toggle.className = 'tree-toggle';
+      toggle.textContent = hasChildren ? (n.expanded ? '▾' : '▸') : '·';
+      toggle.dataset.action = 'toggle';
+      row.appendChild(toggle);
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = n.object3d.visible;
+      cb.dataset.action = 'visibility';
+      row.appendChild(cb);
+
+      const label = document.createElement('span');
+      label.className = 'tree-label';
+      label.textContent = nodeName(n);
+      row.appendChild(label);
+
+      const type = document.createElement('span');
+      type.className = 'tree-type';
+      type.textContent = nodeType(n);
+      row.appendChild(type);
+      return row;
+    }
+
+    treeBody.addEventListener('click', guard((ev) => {
+      const st = getActive(); if (!st || st.mode !== 'offline') return;
+      const row = ev.target.closest('.tree-node');
+      if (!row) return;
+      const id = Number(row.dataset.id);
+      const n  = st.nodeIndex[id];
+      if (!n) return;
+      const action = ev.target.dataset?.action;
+      if (action === 'toggle') { n.expanded = !n.expanded; renderTree(); return; }
+      if (action === 'visibility') { n.object3d.visible = ev.target.checked; return; }
+
+      if (ev.shiftKey && st.lastSelId !== null) {
+        // Range: from lastSelId to id in the CURRENT visible order (filteredIds).
+        const a = filteredIds.indexOf(st.lastSelId);
+        const b = filteredIds.indexOf(id);
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          const range = filteredIds.slice(lo, hi + 1);
+          // Replace set with range — anchor (lastSelId) stays
+          st.selectedIds = new Set(range);
+        } else {
+          // anchor no longer visible — fall back to single-select
+          st.selectedIds = new Set([id]); st.lastSelId = id;
+        }
+      } else if (ev.ctrlKey || ev.metaKey) {
+        // Toggle individual in the set
+        if (st.selectedIds.has(id)) st.selectedIds.delete(id);
+        else st.selectedIds.add(id);
+        st.lastSelId = id;
+      } else {
+        st.selectedIds = new Set([id]);
+        st.lastSelId = id;
+      }
+
+      renderTree();
+      postProps(st, n);        // properties panel shows the last-clicked
+      focusOnObject(st, n.object3d);
+      updateActionButtons();
+    }, 'tree-click'));
+    treeBody.addEventListener('scroll', guard(renderTree, 'tree-scroll'));
+    treeSearch.addEventListener('input', guard(renderTree, 'tree-search'));
+
+    function postProps(st, n) {
+      const o = n.object3d;
+      const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      postHost({ type: 'selectionOffline', tabId: st.tabId,
+        name: o.name || '(unnamed)', meshType: o.type,
+        material: mat?.name || mat?.type || 'default',
+        vertexCount: o.geometry?.attributes?.position?.count ?? 0, distance: '0' });
+    }
+
+    function updateActionButtons() {
+      const st = getActive();
+      const hasSel = !!st && st.mode === 'offline' && st.selectedIds.size > 0;
+      btnIsolate.disabled = !hasSel;
+      btnHide.disabled    = !hasSel;
+    }
+
+    const cbKeepViewIsolate = document.getElementById('cb-keep-view-isolate');
+    btnIsolate.addEventListener('click', guard(() => {
+      const st = getActive(); if (!st || st.mode !== 'offline' || st.selectedIds.size === 0) return;
+      // hide all, then un-hide selected objects + their subtrees + their ancestors
+      st.loadedObject.traverse((o) => o.visible = false);
+      const selObjects = [];
+      for (const id of st.selectedIds) {
+        const o = st.nodeIndex[id]?.object3d; if (!o) continue;
+        selObjects.push(o);
+        o.traverse((c) => c.visible = true);
+        let p = o; while (p) { p.visible = true; p = p.parent; }
+      }
+      refreshVisibilityCheckboxes();
+      if (!cbKeepViewIsolate.checked && selObjects.length) {
+        const unionBox = new THREE.Box3();
+        selObjects.forEach((o) => unionBox.expandByObject(o));
+        frameCameraToBox(st, unionBox, 1.6);
+      }
+    }, 'isolate'));
+    btnHide.addEventListener('click', guard(() => {
+      const st = getActive(); if (!st || st.mode !== 'offline' || st.selectedIds.size === 0) return;
+      for (const id of st.selectedIds) {
+        const o = st.nodeIndex[id]?.object3d; if (o) o.visible = false;
+      }
+      refreshVisibilityCheckboxes();
+      fitCamera(st);
+    }, 'hide'));
+    btnShowAll.addEventListener('click', guard(() => {
+      const st = getActive(); if (!st || st.mode !== 'offline') return;
+      if (st.loadedObject) st.loadedObject.traverse((o) => o.visible = true);
+      for (const [t, subset] of st.hiddenIfcSubsets) if (subset) st.scene.add(subset);
+      st.hiddenIfcSubsets.clear();
+      ifcBody.querySelectorAll('input[type=checkbox]').forEach((cb) => cb.checked = true);
+      refreshVisibilityCheckboxes();
+    }, 'show-all'));
+
+    function refreshVisibilityCheckboxes() {
+      const st = getActive(); if (!st) return;
+      treeBody.querySelectorAll('.tree-node').forEach((row) => {
+        const n  = st.nodeIndex[Number(row.dataset.id)];
+        const cb = row.querySelector('input[type=checkbox]');
+        if (n && cb) cb.checked = n.object3d.visible;
+      });
+    }
+
+    // ---------- IFC filter ----------
+    const COMMON_IFC_TYPES = [
+      'IFCWALL','IFCWALLSTANDARDCASE','IFCSLAB','IFCROOF','IFCCOLUMN','IFCBEAM',
+      'IFCDOOR','IFCWINDOW','IFCFURNISHINGELEMENT','IFCSTAIR','IFCRAILING',
+      'IFCSPACE','IFCOPENINGELEMENT','IFCBUILDINGELEMENTPROXY','IFCPIPESEGMENT',
+      'IFCDUCTSEGMENT','IFCFLOWTERMINAL','IFCPLATE','IFCMEMBER',
+    ];
+    async function buildIfcFilterAsync(st) {
+      if (!ifcLoader || st.ifcModelID === null || !window.WebIFC) { ifcPanel.hidden = true; return; }
+      ifcBody.innerHTML = ''; ifcPanel.hidden = false;
+      for (const typeName of COMMON_IFC_TYPES) {
+        const typeId = window.WebIFC[typeName];
+        if (!typeId) continue;
+        let ids = [];
+        try { ids = await ifcLoader.ifcManager.getAllItemsOfType(st.ifcModelID, typeId, false); }
+        catch (err) { postErr('ifc-type-scan', err, st.tabId); continue; }
+        if (!ids.length) continue;
+        const row = document.createElement('label');
+        const cb  = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = true;
+        cb.addEventListener('change', guard((ev) => toggleIfcType(st, typeName, typeId, ev.target.checked, ids), 'ifc-toggle-type'));
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(' ' + typeName.replace(/^IFC/, '') + ` (${ids.length})`));
+        ifcBody.appendChild(row);
+      }
+    }
+    function toggleIfcType(st, typeName, typeId, visible, ids) {
+      if (!ifcLoader || st.ifcModelID === null) return;
+      if (!visible) {
+        try {
+          const subset = ifcLoader.ifcManager.createSubset({
+            modelID: st.ifcModelID, ids, scene: st.scene, removePrevious: true,
+            customID: 'hide-' + typeName, applyBVH: false });
+          if (subset) subset.visible = false;
+          st.hiddenIfcSubsets.set(typeName, subset);
+        } catch (err) { postErr('ifc-hide', err, st.tabId); }
+      } else {
+        const subset = st.hiddenIfcSubsets.get(typeName);
+        if (subset) { st.scene.remove(subset); st.hiddenIfcSubsets.delete(typeName); }
+        try { ifcLoader.ifcManager.removeSubset(st.ifcModelID, undefined, 'hide-' + typeName); } catch (_) {}
+      }
+    }
+    import('web-ifc').then((m) => { window.WebIFC = m; }).catch(() => {});
+
+    // ---------- Section plane ----------
+    function applyClipPlane(st) {
+      if (!st || !st.clipActive) { renderer.clippingPlanes = []; return; }
+      const normalVec = { x: new THREE.Vector3(1,0,0), y: new THREE.Vector3(0,1,0), z: new THREE.Vector3(0,0,1) }[st.clipAxis];
+      const dir = st.clipDir;
+      const t   = st.clipSlider / 1000;
+      const pos = st.clipRange.min + t * (st.clipRange.max - st.clipRange.min);
+      st.clipPlane.normal.copy(normalVec).multiplyScalar(-dir);
+      st.clipPlane.constant = dir === 1 ? pos : -pos;
+      renderer.clippingPlanes = [st.clipPlane];
+    }
+    secToggle.addEventListener('change', guard(() => { const st = getActive(); if (!st || st.mode !== 'offline') return; st.clipActive = secToggle.checked; applyClipPlane(st); }, 'sec-toggle'));
+    secAxis  .addEventListener('change', guard(() => { const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return; st.clipAxis = secAxis.value; const box = new THREE.Box3().setFromObject(st.loadedObject); st.clipRange = { min: box.min[st.clipAxis], max: box.max[st.clipAxis] }; applyClipPlane(st); }, 'sec-axis'));
+    secSlider.addEventListener('input',  guard(() => { const st = getActive(); if (!st || st.mode !== 'offline') return; st.clipSlider = +secSlider.value; applyClipPlane(st); }, 'sec-slider'));
+    secFlip  .addEventListener('click',  guard(() => { const st = getActive(); if (!st || st.mode !== 'offline') return; st.clipDir = st.clipDir === 1 ? -1 : 1; secFlip.dataset.dir = String(st.clipDir); applyClipPlane(st); }, 'sec-flip'));
+
+    // ---------- View presets ----------
+    function setView(name) {
+      const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      const box = new THREE.Box3().setFromObject(st.loadedObject); if (box.isEmpty()) return;
+      const size = box.getSize(new THREE.Vector3()).length() || 1;
+      const c = box.getCenter(new THREE.Vector3());
+      const d = size * 1.2;
+      let pos;
+      switch (name) {
+        case 'front':  pos = new THREE.Vector3(c.x, c.y, c.z + d); break;
+        case 'back':   pos = new THREE.Vector3(c.x, c.y, c.z - d); break;
+        case 'top':    pos = new THREE.Vector3(c.x, c.y + d, c.z); break;
+        case 'bottom': pos = new THREE.Vector3(c.x, c.y - d, c.z); break;
+        case 'left':   pos = new THREE.Vector3(c.x - d, c.y, c.z); break;
+        case 'right':  pos = new THREE.Vector3(c.x + d, c.y, c.z); break;
+        case 'fit':    fitCamera(st); return;
+        default:       pos = new THREE.Vector3(c.x + d * 0.8, c.y + d * 0.6, c.z + d * 0.8);
+      }
+      st.camera.position.copy(pos);
+      st.camera.lookAt(c);
+      controls.target.copy(c); controls.update();
+    }
+    document.getElementById('toolbar-views').addEventListener('click', guard((ev) => {
+      if (ev.target.tagName === 'BUTTON') setView(ev.target.dataset.view);
+    }, 'view-preset'));
+
+    // ---------- Rotate model + Bake FBX ----------
+    const HALF_PI = Math.PI / 2;
+    function rotateModel(axis, angle) {
+      const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      if (axis === 'x') st.loadedObject.rotateX(angle);
+      if (axis === 'y') st.loadedObject.rotateY(angle);
+      if (axis === 'z') st.loadedObject.rotateZ(angle);
+      fitCamera(st);
+    }
+    // Ancestor-chain check: is this mesh under a camera/light node, or an artifact-named node?
+    const ARTIFACT_NAME_PAT = /^(default_camera|current_viewport|distant_light|target_cam|spot_light|point_light|area_light|hemi_light)/i;
+    function isArtifactDescendant(obj) {
+      let p = obj;
+      while (p) {
+        if (p.isCamera || p.isLight) return true;
+        if (ARTIFACT_NAME_PAT.test(p.name || '')) return true;
+        p = p.parent;
+      }
+      return false;
+    }
+    function disposeTree(root) {
+      root?.traverse?.((o) => {
+        o.geometry?.dispose();
+        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        mats.forEach((m) => m.dispose?.());
+      });
+    }
+    function updateBakeButtons(st) {
+      document.getElementById('btn-undo-bake').disabled = !(st && st.mode === 'offline' && st.bakeBackup);
+    }
+
+    function bakeFbx() {
+      const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      // Dispose any previous backup — single-level undo.
+      if (st.bakeBackup) { disposeTree(st.bakeBackup); st.bakeBackup = null; }
+
+      st.loadedObject.updateMatrixWorld(true);
+      const newRoot = new THREE.Group();
+      newRoot.name = st.loadedObject.name || 'baked';
+
+      let keptCount = 0, skippedCount = 0;
+      st.loadedObject.traverse((o) => {
+        if (!o.isMesh) return;
+        if (isArtifactDescendant(o)) { skippedCount++; return; }
+        const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+        const baked = new THREE.Mesh(g, o.material);
+        baked.name = o.name || 'mesh';
+        newRoot.add(baked);
+        keptCount++;
+      });
+
+      // Detach (don't dispose) old root — kept as backup for Undo
+      st.scene.remove(st.loadedObject);
+      st.bakeBackup = st.loadedObject;
+
+      st.loadedObject = newRoot;
+      st.scene.add(st.loadedObject);
+      fitCamera(st); buildIndex(st); renderTree();
+      updateBakeButtons(st);
+
+      const detail = skippedCount > 0
+        ? `Baked ${keptCount} meshes · hid ${skippedCount} camera/light artifacts. (Undo available.)`
+        : `Baked ${keptCount} meshes. (Undo available.)`;
+      setStatus(detail); setTimeout(() => setStatus(''), 3500);
+    }
+
+    function undoBakeFbx() {
+      const st = getActive(); if (!st || st.mode !== 'offline' || !st.bakeBackup) return;
+      // Remove + dispose current baked root
+      st.scene.remove(st.loadedObject);
+      disposeTree(st.loadedObject);
+      // Restore original
+      st.loadedObject = st.bakeBackup;
+      st.bakeBackup = null;
+      st.scene.add(st.loadedObject);
+      fitCamera(st); buildIndex(st); renderTree();
+      updateBakeButtons(st);
+      setStatus('Bake undone — original scene restored.'); setTimeout(() => setStatus(''), 2500);
+    }
+
+    document.getElementById('btn-bake-fbx').addEventListener('click', guard(bakeFbx, 'bake-fbx'));
+    document.getElementById('btn-undo-bake').addEventListener('click', guard(undoBakeFbx, 'undo-bake'));
+
+    // ---------- Lighting controls wiring ----------
+    const lightPresetEl = document.getElementById('light-preset');
+    const lightAzEl     = document.getElementById('light-az');
+    const lightElEl     = document.getElementById('light-el');
+    function updateLightSliderEnabled() {
+      const locked = lightingPreset === 'headlight';
+      lightAzEl.disabled = lightElEl.disabled = locked;
+      lightAzEl.style.opacity = lightElEl.style.opacity = locked ? 0.4 : 1;
+    }
+    lightPresetEl.addEventListener('change', guard(() => {
+      lightingPreset = lightPresetEl.value;
+      updateLightSliderEnabled();
+      applyLightingToAllTabs();
+    }, 'light-preset'));
+    lightAzEl.addEventListener('input', guard(() => {
+      lightAzimuth = +lightAzEl.value;
+      if (lightingPreset !== 'headlight') applyLightingToAllTabs();
+    }, 'light-az'));
+    lightElEl.addEventListener('input', guard(() => {
+      lightElevation = +lightElEl.value;
+      if (lightingPreset !== 'headlight') applyLightingToAllTabs();
+    }, 'light-el'));
+    updateLightSliderEnabled();
+
+    // ---------- Measurement tool ----------
+    const btnMeasure    = document.getElementById('btn-measure');
+    const measureLabel  = document.getElementById('measure-label');
+    function clearMeasure(st) {
+      if (!st || !st.measure) return;
+      if (st.measure.group) {
+        st.scene.remove(st.measure.group);
+        st.measure.group.traverse((o) => {
+          o.geometry?.dispose();
+          const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+          mats.forEach((m) => m?.dispose?.());
+        });
+        st.measure.group = null;
+      }
+      st.measure.points = [];
+    }
+    function updateMeasureUi(st) {
+      const isActive = !!(st && st.mode === 'offline' && st.measure?.active);
+      btnMeasure.classList.toggle('active', isActive);
+      document.body.classList.toggle('measuring', isActive);
+      const pts = st?.measure?.points || [];
+      if (pts.length === 2) {
+        measureLabel.textContent = pts[0].distanceTo(pts[1]).toFixed(3);
+      } else if (isActive) {
+        measureLabel.textContent = pts.length === 1 ? 'pick 2nd point…' : 'pick 1st point…';
+      } else {
+        measureLabel.textContent = '';
+      }
+    }
+    function addMeasurePoint(st, point) {
+      if (!st.measure.group) { st.measure.group = new THREE.Group(); st.scene.add(st.measure.group); }
+      // Marker sphere sized relative to model scale
+      const box = new THREE.Box3().setFromObject(st.loadedObject);
+      const size = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
+      const r = Math.max(size * 0.005, 0.01);
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0xff3b30, depthTest: false, transparent: true, opacity: 0.9 })
+      );
+      sphere.renderOrder = 9999;
+      sphere.position.copy(point);
+      st.measure.group.add(sphere);
+      st.measure.points.push(point.clone());
+      if (st.measure.points.length === 2) {
+        const [a, b] = st.measure.points;
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([a, b]),
+          new THREE.LineBasicMaterial({ color: 0xff3b30, depthTest: false, transparent: true, opacity: 0.9 })
+        );
+        line.renderOrder = 9999;
+        st.measure.group.add(line);
+      }
+    }
+    btnMeasure.addEventListener('click', guard(() => {
+      const st = getActive(); if (!st || st.mode !== 'offline') return;
+      st.measure.active = !st.measure.active;
+      if (!st.measure.active) clearMeasure(st);
+      else clearMeasure(st);   // clear on enter too
+      updateMeasureUi(st);
+    }, 'measure-toggle'));
+    document.getElementById('toolbar-rotate').addEventListener('click', guard((ev) => {
+      if (ev.target.tagName !== 'BUTTON') return;
+      if (ev.target.id === 'btn-bake-fbx' || ev.target.id === 'btn-undo-bake') return;
+      switch (ev.target.dataset.rot) {
+        case 'x+': rotateModel('x',  HALF_PI); break;
+        case 'x-': rotateModel('x', -HALF_PI); break;
+        case 'y+': rotateModel('y',  HALF_PI); break;
+        case 'y-': rotateModel('y', -HALF_PI); break;
+        case 'z+': rotateModel('z',  HALF_PI); break;
+        case 'z-': rotateModel('z', -HALF_PI); break;
+        case 'flip': rotateModel('x', Math.PI); break;
+      }
+    }, 'rotate-model'));
+
+    // ---------- Viewport click (offline selection) ----------
+    function pickFromViewport(st, event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+      mouse.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, st.camera);
+      const hits = raycaster.intersectObject(st.loadedObject, true);
+      return hits.length ? hits[0] : null;
+    }
+    // Track pointer-down to distinguish a click from a drag release.
+    const CLICK_DRAG_THRESHOLD = 4; // pixels
+    let pressPos = null;
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) { pressPos = null; return; }
+      pressPos = { x: e.clientX, y: e.clientY };
+    });
+    renderer.domElement.addEventListener('pointerup', guard((event) => {
+      if (event.button !== 0 || !pressPos) { pressPos = null; return; }
+      const dx = event.clientX - pressPos.x;
+      const dy = event.clientY - pressPos.y;
+      pressPos = null;
+      if (Math.abs(dx) > CLICK_DRAG_THRESHOLD || Math.abs(dy) > CLICK_DRAG_THRESHOLD) return; // it was a drag
+      const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      // Measurement takes precedence
+      if (st.measure?.active) {
+        const hit = pickFromViewport(st, event);
+        if (!hit) return;
+        if (st.measure.points.length === 2) clearMeasure(st); // 3rd click starts over
+        addMeasurePoint(st, hit.point);
+        updateMeasureUi(st);
+        return;
+      }
+      const hit = pickFromViewport(st, event);
+      if (!hit) { st.selectedIds.clear(); st.lastSelId = null; renderTree(); updateActionButtons(); return; }
+      const idx = st.nodeIndex.findIndex((n) => n.object3d === hit.object);
+      if (idx >= 0) {
+        // Viewport click always single-selects (replace set).
+        st.selectedIds = new Set([idx]);
+        st.lastSelId = idx;
+        let p = st.nodeIndex[idx].parentId;
+        while (p !== -1) { st.nodeIndex[p].expanded = true; p = st.nodeIndex[p].parentId; }
+        renderTree(); postProps(st, st.nodeIndex[idx]); updateActionButtons();
+        // Selection does NOT move the camera. Use double-click to frame the
+        // picked object explicitly (see dblclick handler below).
+      }
+    }, 'viewport-click'));
+    // Double-click: frame the picked object (fill viewport with it)
+    renderer.domElement.addEventListener('dblclick', guard((event) => {
+      const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      const hit = pickFromViewport(st, event);
+      if (hit) fitCameraToObject(st, hit.object);
+    }, 'viewport-dblclick'));
+
+    // ---------- Tree panel collapse / resize ----------
+    let expandedCols = '260px 5px 1fr';
+    app.style.gridTemplateColumns = expandedCols;
+    treeCollapse.addEventListener('click', guard(() => {
+      const willCollapse = !app.classList.contains('collapsed');
+      app.classList.toggle('collapsed', willCollapse);
+      app.style.gridTemplateColumns = willCollapse ? '28px 1fr' : expandedCols;
+      treeCollapse.textContent = willCollapse ? '▶' : '◀';
+      requestAnimationFrame(resizeRenderer);
+    }, 'tree-collapse'));
+    const resizer = document.getElementById('resizer');
+    let dragOrigin = null;
+    resizer.addEventListener('pointerdown', guard((e) => {
+      if (app.classList.contains('collapsed')) return;
+      dragOrigin = { x: e.clientX, w: document.getElementById('tree-panel').offsetWidth };
+      resizer.classList.add('dragging'); resizer.setPointerCapture(e.pointerId); e.preventDefault();
+    }, 'resize-down'));
+    resizer.addEventListener('pointermove', guard((e) => {
+      if (!dragOrigin) return;
+      const newW = Math.max(160, Math.min(600, dragOrigin.w + (e.clientX - dragOrigin.x)));
+      expandedCols = `${newW}px 5px 1fr`;
+      app.style.gridTemplateColumns = expandedCols;
+    }, 'resize-move'));
+    const endDrag = () => { dragOrigin = null; resizer.classList.remove('dragging'); resizeRenderer(); };
+    resizer.addEventListener('pointerup',     guard(endDrag, 'resize-up'));
+    resizer.addEventListener('pointercancel', guard(endDrag, 'resize-cancel'));
+
+    // ---------- Host message bridge ----------
+    window.chrome.webview.addEventListener('message', guard((event) => {
+      const msg = JSON.parse(event.data);
+      switch (msg.type) {
+        case 'createTab':
+          createTab(msg.tabId, msg.mode);
+          break;
+        case 'closeTab':
+          closeTab(msg.tabId);
+          break;
+        case 'switchTab':
+          switchTab(msg.tabId);
+          break;
+        case 'loadOffline': {
+          if (!tabs.has(msg.tabId)) createTab(msg.tabId, 'offline');
+          if (activeTabId !== msg.tabId) switchTab(msg.tabId);
+          const st = tabs.get(msg.tabId);
+          loadOfflineFile(st, msg.url, msg.format);
+          break;
+        }
+        case 'loadAps': {
+          if (!tabs.has(msg.tabId)) createTab(msg.tabId, 'aps');
+          const st = tabs.get(msg.tabId);
+          st.urn = msg.urn; st.token = msg.token;
+          if (activeTabId !== msg.tabId) switchTab(msg.tabId);
+          else loadApsTab(msg.tabId, msg.urn, msg.token);
+          break;
+        }
+        case 'setTheme':
+          applyTheme(msg.theme);
+          break;
+        case 'captureImage': {
+          const st = getActive();
+          const fmt = msg.format || 'image/png';
+          const scale = Math.max(1, Math.min(6, Number(msg.scale) || 1));
+          const purpose = msg.purpose || 'image';
+          if (!st) { postHost({ type: 'imageData', dataUrl: '', purpose }); break; }
+          if (st.mode === 'offline') {
+            try {
+              const size = renderer.getSize(new THREE.Vector2());
+              if (scale !== 1) renderer.setSize(size.x * scale, size.y * scale, false);
+              renderer.render(st.scene, st.camera);
+              const dataUrl = renderer.domElement.toDataURL(fmt);
+              if (scale !== 1) { renderer.setSize(size.x, size.y, false); renderer.render(st.scene, st.camera); }
+              postHost({ type: 'imageData', dataUrl, purpose });
+            } catch (err) { postErr('capture', err); postHost({ type: 'imageData', dataUrl: '', purpose }); }
+          } else if (apsViewer) {
+            try {
+              const w = (apsCt.clientWidth || 1920) * scale;
+              const h = (apsCt.clientHeight || 1080) * scale;
+              apsViewer.getScreenShot(w, h, (dataUrl) => postHost({ type: 'imageData', dataUrl: dataUrl || '', purpose }));
+            } catch (err) { postErr('capture-aps', err); postHost({ type: 'imageData', dataUrl: '', purpose }); }
+          } else {
+            postHost({ type: 'imageData', dataUrl: '', purpose });
+          }
+          break;
+        }
+      }
+    }, 'host-message'));
+
+    postHost({ type: 'ready' });
+  </script>
+</body>
+</html>

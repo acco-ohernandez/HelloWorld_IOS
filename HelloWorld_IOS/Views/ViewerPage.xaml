@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:HelloWorld_IOS.ViewModels"
+             xmlns:ctrl="clr-namespace:HelloWorld_IOS.Controls"
+             x:Class="HelloWorld_IOS.Views.ViewerPage"
+             x:DataType="vm:MainViewModel"
+             Title="3D Model Viewer"
+             BackgroundColor="#1e1e1e">
+
+    <Grid x:Name="RootGrid" RowDefinitions="44,40,*,28" ColumnDefinitions="*">
+
+        <!-- Row 0: Toolbar -->
+        <Grid Grid.Row="0" BackgroundColor="#2b2b2b" Padding="8,4" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+            <Button Grid.Column="0" Text="Open"
+                    Clicked="OnOpenClicked"
+                    BackgroundColor="#3c7adc" TextColor="White"
+                    FontSize="13" Padding="12,4" Margin="0,0,4,0" />
+            <Button Grid.Column="1" Text="+ Tab"
+                    Clicked="OnNewTabClicked"
+                    BackgroundColor="#444" TextColor="White"
+                    FontSize="13" Padding="12,4" />
+            <Label  Grid.Column="2" Text="3D Model Viewer"
+                    HorizontalOptions="Center" VerticalOptions="Center"
+                    TextColor="#aaa" FontSize="13" />
+            <Button Grid.Column="3" x:Name="PropertiesToggleButton"
+                    Text="Properties ▶"
+                    Clicked="OnPropertiesToggleClicked"
+                    BackgroundColor="#444" TextColor="White"
+                    FontSize="13" Padding="12,4" Margin="0,0,4,0" />
+            <Button Grid.Column="4" Text="Theme"
+                    Clicked="OnThemeToggleClicked"
+                    BackgroundColor="#444" TextColor="White"
+                    FontSize="13" Padding="12,4" />
+        </Grid>
+
+        <!-- Row 1: Tab strip -->
+        <CollectionView Grid.Row="1" x:Name="TabStrip"
+                        ItemsSource="{Binding Tabs}"
+                        SelectionMode="Single"
+                        SelectionChanged="OnTabSelectionChanged"
+                        BackgroundColor="#202020">
+            <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Horizontal" ItemSpacing="2" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:TabViewModel">
+                    <Border Padding="10,4" Margin="2,4" StrokeThickness="0"
+                            BackgroundColor="{Binding IsActive, Converter={StaticResource ActiveTabBgConverter}}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <Label Grid.Column="0" Text="{Binding Title}"
+                                   VerticalOptions="Center" TextColor="White" FontSize="12" />
+                            <Button Grid.Column="1" Text="×"
+                                    Clicked="OnCloseTabClicked"
+                                    CommandParameter="{Binding}"
+                                    Padding="6,0" FontSize="14"
+                                    BackgroundColor="Transparent" TextColor="#ccc"
+                                    HeightRequest="22" WidthRequest="22" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Row 2: Body — webview + properties (panel or sheet) -->
+        <Grid Grid.Row="2" x:Name="BodyGrid" ColumnDefinitions="*,0,0">
+            <ctrl:NwdWebView Grid.Column="0" x:Name="Viewer" />
+            <BoxView Grid.Column="1" Color="#444" />
+            <Border Grid.Column="2" x:Name="PropertiesPanel"
+                    BackgroundColor="#262626" StrokeThickness="0"
+                    IsVisible="False">
+                <Grid RowDefinitions="36,*">
+                    <Label Grid.Row="0" Text="Properties" Padding="10,8"
+                           FontAttributes="Bold" TextColor="White"
+                           BackgroundColor="#333" />
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding ActiveTab.Properties}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PropertyNode">
+                                <Grid ColumnDefinitions="120,*" Padding="8,4" ColumnSpacing="8">
+                                    <Label Grid.Column="0" Text="{Binding Key}" TextColor="#aaa" FontSize="12" />
+                                    <Label Grid.Column="1" Text="{Binding Value}" TextColor="White" FontSize="12"
+                                           LineBreakMode="WordWrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Row 3: Status bar -->
+        <Grid Grid.Row="3" BackgroundColor="#181818" Padding="10,4" ColumnDefinitions="*,120">
+            <Label Grid.Column="0" Text="{Binding StatusText}"
+                   TextColor="#ccc" FontSize="11" VerticalOptions="Center" />
+            <ProgressBar Grid.Column="1"
+                         Progress="{Binding ProgressPercent, Converter={StaticResource ProgressConverter}}"
+                         IsVisible="{Binding IsBusy}"
+                         ProgressColor="#3c7adc" />
+        </Grid>
+
+    </Grid>
+
+</ContentPage>

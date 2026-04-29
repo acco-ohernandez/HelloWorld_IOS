@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"/c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Desktop/viewer.html\" \"/c/Visual Studio Files/HelloWorld_IOS/HelloWorld_IOS/Resources/Raw/wwwroot/viewer.html\")",
+      "Bash(cp -r \"/c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Desktop/vendor\" \"/c/Visual Studio Files/HelloWorld_IOS/HelloWorld_IOS/Resources/Raw/wwwroot/vendor\")",
+      "Bash(dotnet workload *)",
+      "Bash(dotnet build *)",
+      "Bash(ssh -V)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/askpass.sh)",
+      "Bash(SSH_ASKPASS=/tmp/askpass.sh SSH_ASKPASS_REQUIRE=force ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR orlandohernandez@192.168.1.139 'echo \"connected as $\\(whoami\\) on $\\(hostname\\)\"')",
+      "Bash(chmod +x /tmp/grab_log.sh)",
+      "Bash(SSH_ASKPASS=/tmp/askpass.sh SSH_ASKPASS_REQUIRE=force scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR /tmp/grab_log.sh orlandohernandez@192.168.1.139:/tmp/grab_log.sh)",
+      "Bash(SSH_ASKPASS=/tmp/askpass.sh SSH_ASKPASS_REQUIRE=force ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR orlandohernandez@192.168.1.139 'chmod +x /tmp/grab_log.sh ; /tmp/grab_log.sh')",
+      "Bash(SSH_ASKPASS=/tmp/askpass.sh SSH_ASKPASS_REQUIRE=force scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR /tmp/launch_console.sh orlandohernandez@192.168.1.139:/tmp/launch_console.sh)",
+      "Bash(SSH_ASKPASS=/tmp/askpass.sh SSH_ASKPASS_REQUIRE=force ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR orlandohernandez@192.168.1.139 'chmod +x /tmp/launch_console.sh ; /tmp/launch_console.sh')",
+      "Bash(mkdir -p ~/.ssh)",
+      "Bash(ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_mac -N \"\" -C \"claude-deploy@$\\(hostname\\)\")",
+      "Read(//c/Users/ohernandez/.ssh/**)",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR orlandohernandez@192.168.1.139 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF '\\\\''claude-deploy@'\\\\'' ~/.ssh/authorized_keys 2>/dev/null || echo '\\\\''__TRACKED_VAR__'\\\\'' >> ~/.ssh/authorized_keys ; chmod 600 ~/.ssh/authorized_keys ; tail -1 ~/.ssh/authorized_keys')",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR -o PreferredAuthentications=publickey -i ~/.ssh/id_ed25519_mac orlandohernandez@192.168.1.139 'echo \"key auth works as $\\(whoami\\)\"')",
+      "PowerShell(cd \"C:\\\\Visual Studio Files\\\\HelloWorld_IOS\"; pwsh -ExecutionPolicy Bypass -File .\\\\deploy-ipad.ps1)",
+      "PowerShell(Get-Command ssh -ErrorAction SilentlyContinue ; \\(Get-ChildItem \"C:\\\\Windows\\\\System32\\\\OpenSSH\\\\ssh.exe\" -ErrorAction SilentlyContinue\\).FullName ; \\(Get-ChildItem \"C:\\\\Program Files\\\\OpenSSH\\\\ssh.exe\" -ErrorAction SilentlyContinue\\).FullName ; \\(Get-ChildItem \"$env:ProgramFiles\\\\Git\\\\usr\\\\bin\\\\ssh.exe\" -ErrorAction SilentlyContinue\\).FullName)"
+    ]
+  }
+}

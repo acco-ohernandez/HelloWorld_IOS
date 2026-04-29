@@ -1,0 +1,44 @@
+using HelloWorld_IOS.Controls;
+using HelloWorld_IOS.Services;
+using HelloWorld_IOS.ViewModels;
+using HelloWorld_IOS.Views;
+using Microsoft.Extensions.Logging;
+
+namespace HelloWorld_IOS;
+
+public static class MauiProgram
+{
+	public static MauiApp CreateMauiApp()
+	{
+		var builder = MauiApp.CreateBuilder();
+		builder
+			.UseMauiApp<App>()
+			.ConfigureFonts(fonts =>
+			{
+				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+			})
+			.ConfigureMauiHandlers(handlers =>
+			{
+#if IOS
+				handlers.AddHandler<NwdWebView, HelloWorld_IOS.Platforms.iOS.NwdWebViewHandler>();
+#endif
+			});
+
+		builder.Services.AddSingleton<MainViewModel>();
+		builder.Services.AddSingleton<CredentialStore>();
+		builder.Services.AddSingleton<TabFileStore>();
+		builder.Services.AddTransient<PickedFileImporter>();
+		builder.Services.AddTransient<ViewerPage>();
+
+		// HttpClient is unused in v1 (no APS path) but registered as the v2 seam:
+		// the ported NwdViewer.Aps clients resolve it via DI without builder edits.
+		builder.Services.AddHttpClient();
+
+#if DEBUG
+		builder.Logging.AddDebug();
+#endif
+
+		return builder.Build();
+	}
+}

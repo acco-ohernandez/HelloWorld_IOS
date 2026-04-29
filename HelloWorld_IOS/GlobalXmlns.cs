@@ -1,0 +1,5 @@
+[assembly: XmlnsDefinition("http://schemas.microsoft.com/dotnet/maui/global", "HelloWorld_IOS")]
+[assembly: XmlnsDefinition("http://schemas.microsoft.com/dotnet/maui/global", "HelloWorld_IOS.Pages")]
+[assembly: XmlnsDefinition("http://schemas.microsoft.com/dotnet/maui/global", "HelloWorld_IOS.Views")]
+[assembly: XmlnsDefinition("http://schemas.microsoft.com/dotnet/maui/global", "HelloWorld_IOS.ViewModels")]
+[assembly: XmlnsDefinition("http://schemas.microsoft.com/dotnet/maui/global", "HelloWorld_IOS.Controls")]

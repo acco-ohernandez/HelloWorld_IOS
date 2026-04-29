@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.orlandohernandez.Bootstrap</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+		<integer>2</integer>
+	</array>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>XSAppIconAssets</key>
+	<string>Assets.xcassets/appicon.appiconset</string>
+
+	<!-- Custom UTIs for the 3D model formats we open. None of these have a
+	     public Apple-defined UTI, so we declare our own. The Document Picker
+	     reads these to filter what's selectable from Files / iCloud / Box /
+	     Drive. Each conforms to public.data so the system picker fallback
+	     ("any data file") still works for providers that ignore custom UTIs. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.ifc</string>
+			<key>UTTypeDescription</key><string>Industry Foundation Classes Model</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>ifc</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.gltf</string>
+			<key>UTTypeDescription</key><string>glTF Model</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>gltf</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.glb</string>
+			<key>UTTypeDescription</key><string>glTF Binary Model</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>glb</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.obj</string>
+			<key>UTTypeDescription</key><string>Wavefront OBJ Model</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>obj</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.fbx</string>
+			<key>UTTypeDescription</key><string>FBX Model</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>fbx</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.stl</string>
+			<key>UTTypeDescription</key><string>Stereolithography Model</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>stl</string></array>
+			</dict>
+		</dict>
+	</array>
+
+	<!-- Tell the system we can open these document types so they appear in
+	     "Open With" menus and Document Picker filters. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>3D Model</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.orlandohernandez.ifc</string>
+				<string>com.orlandohernandez.gltf</string>
+				<string>com.orlandohernandez.glb</string>
+				<string>com.orlandohernandez.obj</string>
+				<string>com.orlandohernandez.fbx</string>
+				<string>com.orlandohernandez.stl</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Sandbox: Files-app integration. Lets the user place models in
+	     "On My iPad / HelloWorld_IOS" and lets external apps open files
+	     stored there. -->
+	<key>UIFileSharingEnabled</key><true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+</dict>
+</plist>
