@@ -30,9 +30,14 @@ public static class MauiProgram
 		builder.Services.AddSingleton<TabFileStore>();
 		builder.Services.AddTransient<PickedFileImporter>();
 		builder.Services.AddTransient<ViewerPage>();
+		builder.Services.AddTransient<SettingsViewModel>();
+		builder.Services.AddTransient<SettingsPage>();
 
-		// HttpClient is unused in v1 (no APS path) but registered as the v2 seam:
-		// the ported NwdViewer.Aps clients resolve it via DI without builder edits.
+		// APS factory: per-call construction of the HttpClient + three APS
+		// clients. Cheap (no I/O at construction). MainViewModel's TranslateAsync
+		// owns the lifetime via `using`.
+		builder.Services.AddSingleton<Func<ApsCredentials, ApsServices>>(_ => creds => new ApsServices(creds));
+
 		builder.Services.AddHttpClient();
 
 #if DEBUG

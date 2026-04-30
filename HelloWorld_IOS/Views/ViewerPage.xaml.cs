@@ -10,17 +10,19 @@ public partial class ViewerPage : ContentPage
     private readonly TabFileStore _store;
     private readonly PickedFileImporter _importer;
     private readonly ViewerBridge _bridge;
+    private readonly IServiceProvider _services;
     private bool _viewerReady;
     private string _theme = "light";
     private bool _propertiesCollapsed;       // user-toggled state; sticks across rotations
     private bool _orientationInitialized;    // guards the per-orientation default seed
 
-    public ViewerPage(MainViewModel vm, TabFileStore store, PickedFileImporter importer)
+    public ViewerPage(MainViewModel vm, TabFileStore store, PickedFileImporter importer, IServiceProvider services)
     {
         InitializeComponent();
         _vm = vm;
         _store = store;
         _importer = importer;
+        _services = services;
         _bridge = new ViewerBridge(vm);
         BindingContext = vm;
 
@@ -133,27 +135,52 @@ public partial class ViewerPage : ContentPage
 
     private async Task OpenFilesAsync(IEnumerable<FileResult> results)
     {
-        // Multi-file open = pick lead model file (first supported), copy all
-        // siblings into the same tab folder so relative refs resolve via the
-        // nwdviewer-files:// scheme handler.
         var list = results.ToList();
         if (list.Count == 0) return;
 
-        var lead = list.FirstOrDefault(r => PickedFileImporter.IsModelExtension(r.FileName));
-        if (lead is null)
+        // Split picks into APS (nwd/nwc) and offline. APS is processed
+        // sequentially because each translation is a credit-paying server
+        // job and parallelizing hits APS rate limits anyway. Offline can
+        // be handled with the existing single-tab batch (lead + siblings).
+        var apsFiles    = list.Where(r => IsApsExtension(r.FileName)).ToList();
+        var offlineFiles = list.Where(r => PickedFileImporter.IsModelExtension(r.FileName)).ToList();
+
+        if (apsFiles.Count == 0 && offlineFiles.Count == 0)
         {
             _vm.StatusText = "No supported 3D file in selection.";
             return;
         }
 
+        if (offlineFiles.Count > 0)
+            await OpenOfflineBatchAsync(list, offlineFiles[0]);
+
+        foreach (var r in apsFiles)
+            await OpenApsFileAsync(r);
+    }
+
+    private static bool IsApsExtension(string filename)
+    {
+        var ext = Path.GetExtension(filename).ToLowerInvariant();
+        return ext is ".nwd" or ".nwc";
+    }
+
+    private async Task OpenOfflineBatchAsync(List<FileResult> all, FileResult lead)
+    {
         var tab = _vm.AddOfflineTab(lead.FileName);
         _bridge.CreateTab(tab.TabId, ViewModels.TabMode.Offline);
         _bridge.SwitchTab(tab.TabId);
 
         try
         {
-            foreach (var r in list)
+            // Copy lead + sibling files (textures, .mtl, .bin, etc.) into the
+            // same tab folder so relative refs resolve via the nwdviewer-files://
+            // scheme handler. Skip APS files in the batch — those route on
+            // their own.
+            foreach (var r in all)
+            {
+                if (IsApsExtension(r.FileName)) continue;
                 await _importer.ImportAsync(r, tab.TabId);
+            }
 
             var url = _store.BuildUrl(tab.TabId, lead.FileName);
             var fmt = PickedFileImporter.FormatFromExtension(lead.FileName);
@@ -162,6 +189,50 @@ public partial class ViewerPage : ContentPage
         catch (Exception ex)
         {
             _vm.StatusText = $"Import failed: {ex.Message}";
+        }
+    }
+
+    private async Task OpenApsFileAsync(FileResult result)
+    {
+        // Auto-prompt Settings if creds are missing. The user can also reach
+        // Settings any time from the toolbar gear button.
+        if (!_vm.HasCredentials)
+        {
+            var page = _services.GetRequiredService<Views.SettingsPage>();
+            await Navigation.PushModalAsync(page);
+            // After the Settings sheet dismisses, re-check; if still missing,
+            // the user cancelled — abort cleanly without creating a tab.
+            if (!_vm.HasCredentials)
+            {
+                _vm.StatusText = $"Cancelled: APS credentials are required to open {result.FileName}.";
+                return;
+            }
+        }
+
+        // Create the tab early so the user sees the title and progress in the
+        // status bar while uploading + translating.
+        var tab = _vm.AddApsTab(result.FileName, urn: string.Empty, token: string.Empty);
+        _bridge.CreateTab(tab.TabId, ViewModels.TabMode.Aps);
+        _bridge.SwitchTab(tab.TabId);
+
+        try
+        {
+            // Copy local file into the tab cache so we have a stable path
+            // for the upload step (also matches the offline file layout).
+            await _importer.ImportAsync(result, tab.TabId);
+            var localPath = Path.Combine(_store.GetTabDirectory(tab.TabId), result.FileName);
+
+            var (urn, token, modelGuid) = await _vm.TranslateAsync(localPath);
+            tab.Urn = urn;
+            tab.Token = token;
+            tab.ApsModelGuid = modelGuid;
+
+            // APS Viewer SDK in JS prepends 'urn:' itself, so send the stripped form.
+            _bridge.LoadAps(tab.TabId, NwdViewer.Aps.OssClient.WithoutPrefix(urn), token);
+        }
+        catch (Exception ex)
+        {
+            _vm.StatusText = $"APS error: {ex.Message}";
         }
     }
 
@@ -177,6 +248,12 @@ public partial class ViewerPage : ContentPage
     {
         _theme = _theme == "light" ? "dark" : "light";
         _bridge.SetTheme(_theme);
+    }
+
+    private async void OnSettingsClicked(object? sender, EventArgs e)
+    {
+        var page = _services.GetRequiredService<Views.SettingsPage>();
+        await Navigation.PushModalAsync(page);
     }
 
     private void OnTabSelectionChanged(object? sender, SelectionChangedEventArgs e)

@@ -1,8 +1,23 @@
 # 3D Model Viewer — iPad MAUI Host
 
-A .NET MAUI iPad app that hosts the **NwdViewer.Desktop** `viewer.html` (three.js 0.149 + web-ifc 0.0.44) verbatim, rendering FBX, IFC, glTF/GLB, OBJ, and STL files offline. The Windows WPF shell of the upstream project is **rewritten** here for MAUI + WKWebView + custom URL-scheme handlers. The viewer.html itself and the entire `vendor/` JS folder are **shipped unmodified except for four documented patches**, so the desktop and iPad versions stay logically identical.
+A .NET MAUI iPad app that hosts the **NwdViewer.Desktop** `viewer.html` (three.js 0.149 + web-ifc 0.0.44) verbatim, rendering FBX, IFC, glTF/GLB, OBJ, and STL **offline**, plus **NWD/NWC** through the Autodesk Platform Services (APS) cloud-translation pipeline. The Windows WPF shell of the upstream project is **rewritten** here for MAUI + WKWebView + custom URL-scheme handlers. The viewer.html itself and the entire `vendor/` JS folder are **shipped unmodified except for documented patches**, so the desktop and iPad versions stay logically identical.
 
 For build/deploy/signing/Pair-to-Mac concerns, see [CLAUDE-TOOLCHAIN.md](CLAUDE-TOOLCHAIN.md). This doc is about the code.
+
+## Solution structure
+
+```
+HelloWorld_IOS.sln
+├── HelloWorld_IOS/                # MAUI iPad app project (the shell)
+└── NwdViewer.Aps/                 # APS REST client library, copied verbatim from
+                                   # ../NWC_NWC_Viewer/NwdViewer.Aps. Pure HTTP, net8.0,
+                                   # zero platform-specific APIs. Sync upstream when
+                                   # it changes; do not edit locally except for
+                                   # error-message improvements (see "APS error surfacing"
+                                   # below). Note: `*.aps` in .gitignore matches this
+                                   # folder on case-insensitive Windows; an explicit
+                                   # re-include rule is in .gitignore — keep it.
+```
 
 ## Upstream
 
@@ -131,22 +146,51 @@ In `MauiProgram.cs`:
 - `AddHttpClient()` is registered even though v1 doesn't make HTTP calls — that's the v2-APS seam so the upstream `NwdViewer.Aps` clients can be dropped in unchanged.
 - `ConfigureMauiHandlers` binds `NwdWebView` to `NwdWebViewHandler` only on iOS (`#if IOS`).
 
-## v2 APS readiness (deliberate seams kept in v1)
+## APS cloud path (v2 — shipped)
 
-- `TabViewModel` keeps `Mode`, `Urn`, `Token`, `ApsModelGuid` even though they're unused.
-- `MainViewModel` has `AddApsTab` / `TranslateAsync` / `LoadApsPropertiesAsync` as `NotImplementedException`-throwing stubs and a `// v2-APS-port-notes` comment block at the top.
-- `Services/CredentialStore.cs` is a `SecureStorage`-backed wrapper with the same `(GetAsync, SaveAsync, DeleteAsync)` shape as the WPF `CredentialStore`. Keys: `NwdViewer.ApsClientId`, `NwdViewer.ApsClientSecret`, `NwdViewer.ApsBucketKey`.
-- `ViewerBridge` outbound switch reserves `loadAps` and `captureImage` helper methods. Inbound parser routes `selection`, `apsDiag`, `imageData`, `error` (logs `Debug.WriteLine` for now).
-- `viewer.html` ships its full APS branch (the JS APS Viewer initialization / `loadApsTab` are still present); `ensureApsSdk()` is the only gate.
+NWD/NWC files route through the **Autodesk Platform Services** cloud-translation pipeline (upload → translate → SVF2 viewer), all the way through the JS-side APS Viewer 7.x SDK. The seams kept in v1 made this fully additive — no shell refactor.
 
-To turn APS on in v2: copy `NwdViewer.Aps/` into the solution as a class library, swap the throws in `MainViewModel` for real `ApsServices` calls, build a `SettingsPage` that writes to `CredentialStore`. No protocol or shell refactor needed.
+**Library:** `NwdViewer.Aps/` is a sibling project, copied verbatim from `../NWC_NWC_Viewer/NwdViewer.Aps`. TFM `net8.0`, single dep `Microsoft.Extensions.Http`, zero platform-specific APIs. **Don't fork divergent changes locally** — sync upstream when it changes. The one local exception is APS error-message surfacing (see "APS error surfacing" below) which we'd want to upstream eventually.
 
-## Out of scope for v1
+**Files added for v2:**
+- `Services/ApsServices.cs` — facade: HttpClient (10-min timeout) + `AuthClient` + `OssClient` + `ModelDerivativeClient`. Disposable. Created per-call by `MainViewModel` and reused across that translation.
+- `Views/SettingsPage.xaml(.cs)` — modal `ContentPage` with three Entries (Client ID, Client Secret with `IsPassword=true`, Bucket Key) + Cancel/Save toolbar.
+- `ViewModels/SettingsViewModel.cs` — binds the form, validates the Bucket Key against APS rules (`^[a-z0-9_]{3,128}$` — lowercase letters, digits, underscores only; no hyphens, no uppercase), wraps `CredentialStore.Save/LoadAsync`.
 
-- Drag-and-drop from external apps onto the page root (MAUI `DropGestureRecognizer` doesn't surface external file drops as `FileResult`; needs a `UIDropInteraction` on the iOS handler — v1.5 task). FilePicker covers all sources, so this isn't blocking.
-- Portrait properties as a bottom sheet (currently the panel just hides in portrait; landscape side panel works via the **Properties ◀/▶** toolbar toggle).
-- PDF export, PNG save-as. PDFsharp doesn't compile cross-platform; these come back via QuestPDF (or skipped) when APS lands.
-- iPhone layout polish. The page reflows but isn't tuned.
+**Files modified for v2:**
+- `MauiProgram.cs` — DI registration: `Func<ApsCredentials, ApsServices>` factory (singleton), `SettingsViewModel` + `SettingsPage` (transient).
+- `MainViewModel.cs` — APS surface fully un-stubbed. `_aps` cached across calls; `InvalidateApsServices()` called by SettingsPage on Save so updated credentials take effect on the next translation. `MainViewModel` is now `IDisposable`.
+- `Views/ViewerPage.xaml(.cs)` — added gear (⚙) toolbar button between **Properties** and **Theme**. `OpenFilesAsync` splits picks into APS (.nwd / .nwc) and offline streams; APS files run sequentially because translation jobs are credit-paying server work and APS rate-limits parallel calls. **Auto-prompt** for SettingsPage if the user picks an APS file with no credentials saved.
+- `Services/ViewerBridge.cs` — `selection` case calls `MainViewModel.LoadApsPropertiesAsync`; `apsDiag` and `error` cases now real handlers.
+- `Platforms/iOS/Info.plist` — added `com.orlandohernandez.nwd` and `.nwc` to `UTExportedTypeDeclarations` and `LSItemContentTypes`.
+
+**Settings + credentials flow:**
+- Persistent ⚙ gear button in the toolbar opens SettingsPage anytime.
+- If the user picks an `.nwd` / `.nwc` with no credentials, SettingsPage auto-opens. On Save, the import resumes; on Cancel, status bar shows "Cancelled: APS credentials are required to open …" and no tab is created.
+- Credentials live in iOS Keychain via `Services/CredentialStore` (already a v1 seam) under target keys `NwdViewer.ApsClientId`, `NwdViewer.ApsClientSecret`, `NwdViewer.ApsBucketKey`.
+
+**Bucket Key rules** (a frequent source of 400 errors):
+- Lowercase letters, digits, underscores only — `^[a-z0-9_]{3,128}$`. No hyphens. No uppercase.
+- Must be globally unique across **all APS apps in the world**, not just your account. Include something personal-ish.
+- `SettingsViewModel.IsValidBucketKey` rejects bad keys at Save time so they don't reach APS.
+
+**APS error surfacing (local patch to NwdViewer.Aps):**
+The upstream library uses `EnsureSuccessStatusCode()` which throws an `HttpRequestException` whose message contains *only* the status code (e.g., `"400 (Bad Request)"`) — the response body, which usually contains the actual reason, is dropped. We added a private `EnsureSuccessOrThrowAsync` helper in `OssClient.cs` and inlined the same pattern in `AuthClient.cs` so APS error bodies (e.g., `"Bucket key is invalid"`, `"Token exchange denied. Policy 'ProductAccessRequiresCapacity' has effect: deny"`) surface to the status bar and Debug output. Local-only patch; sync upstream when convenient.
+
+**Known APS errors, in plain English:**
+- `400 ... Bucket key is invalid` — bucket key violates the format rule above. Open Settings, fix it, Save.
+- `403 ... Token exchange denied. Policy 'ProductAccessRequiresCapacity' has effect: deny` — APS account is out of cloud credits OR the requested format isn't included in the account's entitlements. Especially common on **NWD** even when **NWC** works on the same account: NWD lives in a different entitlement bundle (Construction / BIM 360 / ACC) and needs explicit provisioning in your APS app at https://aps.autodesk.com.
+- `404` on `/manifest` shortly after `StartTranslation` — APS hasn't begun indexing yet. The `WaitForTranslationAsync` poll loop tolerates this on the first cycle.
+- Translation hangs at `0%` for several minutes on a large NWD — normal; SVF2 translation of complex linked-NWD files is slow.
+
+## Out of scope (still)
+
+- **Image / PDF capture** (`captureImage` JS message). PDFsharp doesn't compile cross-platform; revisit with QuestPDF.
+- **Drag-and-drop** from external apps. MAUI's `DropGestureRecognizer` doesn't surface external file drops as `FileResult`; needs a `UIDropInteraction` on the iOS handler. FilePicker covers all sources for now.
+- **Portrait properties as a bottom sheet.** Currently the panel just hides in portrait; the landscape side panel works fine via the **Properties ◀/▶** toolbar toggle.
+- **iPhone layout polish.** Page reflows but isn't tuned.
+- **Cancel running translation.** Upstream WPF doesn't offer it either; not blocking.
+- **APS multi-file batch with "continue with remaining?" prompt.** Current behavior is sequential best-effort; per-file failure aborts that file but the next file proceeds.
 
 ## Deploying
 

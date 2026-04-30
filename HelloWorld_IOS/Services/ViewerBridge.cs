@@ -117,17 +117,28 @@ public sealed class ViewerBridge
                 }
 
                 case "selection":
-                    // v2: when APS is wired, route to LoadApsPropertiesAsync as the WPF side does.
-                    Debug.WriteLine($"[v2] selection received before APS port: {rawJson}");
+                {
+                    var tabId = GetIntOrNull(doc.RootElement, "tabId");
+                    var dbId  = GetIntOrNull(doc.RootElement, "dbId");
+                    var tab   = FindTab(tabId);
+                    if (tab is { Mode: TabMode.Aps, ApsModelGuid: { } guid } && dbId is { } id)
+                    {
+                        _ = _vm.LoadApsPropertiesAsync(tab, id, guid);
+                    }
+                    else if (tab is { Mode: TabMode.Aps, ApsModelGuid: null })
+                    {
+                        _vm.StatusText = "Cannot load properties — APS model GUID not yet available.";
+                    }
                     break;
+                }
 
                 case "apsDiag":
                     Debug.WriteLine($"[aps-diag] {GetStringOrNull(doc.RootElement, "msg")}");
                     break;
 
                 case "imageData":
-                    // v2: image/PDF capture path. v1 does not request captures.
-                    Debug.WriteLine("[v2] imageData received without an active capture request");
+                    // v3: image/PDF capture path. Not in v2.
+                    Debug.WriteLine("[v3] imageData received without an active capture request");
                     break;
 
                 case "error":

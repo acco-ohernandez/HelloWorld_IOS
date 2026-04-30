@@ -11,7 +11,7 @@
     <Grid x:Name="RootGrid" RowDefinitions="44,40,*,28" ColumnDefinitions="*">
 
         <!-- Row 0: Toolbar -->
-        <Grid Grid.Row="0" BackgroundColor="#2b2b2b" Padding="8,4" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+        <Grid Grid.Row="0" BackgroundColor="#2b2b2b" Padding="8,4" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
             <Button Grid.Column="0" Text="Open"
                     Clicked="OnOpenClicked"
                     BackgroundColor="#3c7adc" TextColor="White"
@@ -28,7 +28,11 @@
                     Clicked="OnPropertiesToggleClicked"
                     BackgroundColor="#444" TextColor="White"
                     FontSize="13" Padding="12,4" Margin="0,0,4,0" />
-            <Button Grid.Column="4" Text="Theme"
+            <Button Grid.Column="4" Text="⚙"
+                    Clicked="OnSettingsClicked"
+                    BackgroundColor="#444" TextColor="White"
+                    FontSize="16" Padding="10,2" Margin="0,0,4,0" />
+            <Button Grid.Column="5" Text="Theme"
                     Clicked="OnThemeToggleClicked"
                     BackgroundColor="#444" TextColor="White"
                     FontSize="13" Padding="12,4" />

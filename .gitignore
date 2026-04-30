@@ -110,6 +110,15 @@ ipch/
 *.sdf
 *.cachefile
 *.VC.db
+
+# `*.aps` above is for Visual C++ resource files but matches the
+# NwdViewer.Aps/ project directory on case-insensitive Windows. Re-include
+# the source folder, then re-exclude its build output. Same pattern as the
+# upstream NWC_NWC_Viewer repository.
+!NwdViewer.Aps/
+!NwdViewer.Aps/**
+NwdViewer.Aps/bin/
+NwdViewer.Aps/obj/
 *.VC.VC.opendb
 
 # Visual Studio profiler

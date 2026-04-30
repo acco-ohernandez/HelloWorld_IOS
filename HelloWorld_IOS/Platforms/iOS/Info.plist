@@ -92,6 +92,24 @@
 				<key>public.filename-extension</key><array><string>stl</string></array>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.nwd</string>
+			<key>UTTypeDescription</key><string>Navisworks Document</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>nwd</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.orlandohernandez.nwc</string>
+			<key>UTTypeDescription</key><string>Navisworks Cache</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>nwc</string></array>
+			</dict>
+		</dict>
 	</array>
 
 	<!-- Tell the system we can open these document types so they appear in
@@ -110,6 +128,8 @@
 				<string>com.orlandohernandez.obj</string>
 				<string>com.orlandohernandez.fbx</string>
 				<string>com.orlandohernandez.stl</string>
+				<string>com.orlandohernandez.nwd</string>
+				<string>com.orlandohernandez.nwc</string>
 			</array>
 		</dict>
 	</array>

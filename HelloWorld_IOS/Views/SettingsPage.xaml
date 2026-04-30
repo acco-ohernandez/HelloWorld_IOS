@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:HelloWorld_IOS.ViewModels"
+             x:Class="HelloWorld_IOS.Views.SettingsPage"
+             x:DataType="vm:SettingsViewModel"
+             Title="APS Settings"
+             BackgroundColor="#1e1e1e">
+
+    <Grid RowDefinitions="44,*,28">
+
+        <!-- Custom toolbar: Cancel / title / Save -->
+        <Grid Grid.Row="0" BackgroundColor="#2b2b2b" Padding="8,4" ColumnDefinitions="Auto,*,Auto">
+            <Button Grid.Column="0" Text="Cancel"
+                    Clicked="OnCancelClicked"
+                    BackgroundColor="#444" TextColor="White"
+                    FontSize="13" Padding="12,4" />
+            <Label  Grid.Column="1" Text="APS Settings"
+                    HorizontalOptions="Center" VerticalOptions="Center"
+                    TextColor="White" FontSize="14" FontAttributes="Bold" />
+            <Button Grid.Column="2" Text="Save"
+                    Clicked="OnSaveClicked"
+                    BackgroundColor="#3c7adc" TextColor="White"
+                    FontSize="13" Padding="12,4" />
+        </Grid>
+
+        <!-- Form -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="20,16" Spacing="14">
+                <Label Text="APS credentials"
+                       FontSize="16" FontAttributes="Bold" TextColor="White" />
+                <Label Text="Get a Client ID and Secret from https://aps.autodesk.com (Create an App)."
+                       FontSize="12" TextColor="#aaa" LineBreakMode="WordWrap" />
+
+                <Label Text="Client ID" FontSize="12" TextColor="#888" Margin="0,8,0,0" />
+                <Entry Text="{Binding ClientId}"
+                       Placeholder="Client ID from aps.autodesk.com"
+                       BackgroundColor="#262626" TextColor="White"
+                       PlaceholderColor="#666" />
+
+                <Label Text="Client Secret" FontSize="12" TextColor="#888" />
+                <Entry Text="{Binding ClientSecret}"
+                       IsPassword="True"
+                       Placeholder="Client Secret"
+                       BackgroundColor="#262626" TextColor="White"
+                       PlaceholderColor="#666" />
+
+                <Label Text="Bucket Key" FontSize="12" TextColor="#888" />
+                <Entry Text="{Binding BucketKey}"
+                       Placeholder="orlando_nwdviewer (a-z, 0-9, _ only)"
+                       BackgroundColor="#262626" TextColor="White"
+                       PlaceholderColor="#666" />
+                <Label Text="Bucket key rules (APS): lowercase letters, numbers, and underscores only — no hyphens, no uppercase. Must be globally unique across all APS apps. 3–128 chars."
+                       FontSize="11" TextColor="#888" LineBreakMode="WordWrap" />
+
+                <Label Text="Stored in iOS Keychain. Cleared if you delete the app."
+                       FontSize="11" TextColor="#666" Margin="0,8,0,0" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Status bar -->
+        <Grid Grid.Row="2" BackgroundColor="#181818" Padding="10,4">
+            <Label Text="{Binding StatusText}"
+                   TextColor="#f87171" FontSize="11" VerticalOptions="Center" />
+        </Grid>
+    </Grid>
+
+</ContentPage>

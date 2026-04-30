@@ -22,7 +22,13 @@
       "PowerShell(cd \"C:\\\\Visual Studio Files\\\\HelloWorld_IOS\"; pwsh -ExecutionPolicy Bypass -File .\\\\deploy-ipad.ps1)",
       "PowerShell(Get-Command ssh -ErrorAction SilentlyContinue ; \\(Get-ChildItem \"C:\\\\Windows\\\\System32\\\\OpenSSH\\\\ssh.exe\" -ErrorAction SilentlyContinue\\).FullName ; \\(Get-ChildItem \"C:\\\\Program Files\\\\OpenSSH\\\\ssh.exe\" -ErrorAction SilentlyContinue\\).FullName ; \\(Get-ChildItem \"$env:ProgramFiles\\\\Git\\\\usr\\\\bin\\\\ssh.exe\" -ErrorAction SilentlyContinue\\).FullName)",
       "Bash(ssh -i ~/.ssh/id_ed25519_mac -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR -o PreferredAuthentications=publickey orlandohernandez@192.168.1.139 'xcrun devicectl list devices 2>&1')",
-      "Bash(ssh -i '~/.ssh/id_ed25519_mac' -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR -o PreferredAuthentications=publickey orlandohernandez@192.168.1.139 'MLAUNCH=/Users/orlandohernandez/Library/Caches/Xamarin/XMA/SDKs/dotnet/packs/Microsoft.iOS.Sdk.net10.0_26.2/26.2.10233/tools/bin/mlaunch ; \"$MLAUNCH\" --listdev=/tmp/d.xml --output-format=xml >/dev/null 2>&1 ; grep -E \"<Name>|<InterfaceType>|<UDID>|<IsUsable\" /tmp/d.xml')"
+      "Bash(ssh -i '~/.ssh/id_ed25519_mac' -o UserKnownHostsFile=/tmp/known_hosts_mac -o LogLevel=ERROR -o PreferredAuthentications=publickey orlandohernandez@192.168.1.139 'MLAUNCH=/Users/orlandohernandez/Library/Caches/Xamarin/XMA/SDKs/dotnet/packs/Microsoft.iOS.Sdk.net10.0_26.2/26.2.10233/tools/bin/mlaunch ; \"$MLAUNCH\" --listdev=/tmp/d.xml --output-format=xml >/dev/null 2>&1 ; grep -E \"<Name>|<InterfaceType>|<UDID>|<IsUsable\" /tmp/d.xml')",
+      "Read(//c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Aps//**)",
+      "Read(//c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Aps/**)",
+      "Bash(cp \"/c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Aps/\"*.cs \"/c/Visual Studio Files/HelloWorld_IOS/NwdViewer.Aps/\")",
+      "Bash(cp \"/c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Aps/NwdViewer.Aps.csproj\" \"/c/Visual Studio Files/HelloWorld_IOS/NwdViewer.Aps/\")",
+      "Bash(dotnet sln *)",
+      "Bash(dotnet add *)"
     ]
   }
 }
