@@ -232,8 +232,43 @@ public partial class ViewerPage : ContentPage
         }
         catch (Exception ex)
         {
-            _vm.StatusText = $"APS error: {ex.Message}";
+            await ShowApsErrorAsync(ex.Message, result.FileName);
         }
+    }
+
+    /// <summary>
+    /// APS errors carry their actionable detail inside the response body
+    /// (see the EnsureSuccessOrThrowAsync helper in NwdViewer.Aps/OssClient.cs +
+    /// AuthClient.cs). The status bar truncates them; pop a modal so the user
+    /// can read the full message and translate the policy name into a fix.
+    /// </summary>
+    private async Task ShowApsErrorAsync(string fullMessage, string filename)
+    {
+        // Status bar gets a short summary. Full message goes to the alert.
+        _vm.StatusText = $"APS error opening {filename} (tap for details).";
+
+        var hint = ClassifyApsError(fullMessage);
+        var alertBody = string.IsNullOrWhiteSpace(hint)
+            ? fullMessage
+            : $"{hint}\n\n— Full APS response —\n{fullMessage}";
+        try { await DisplayAlertAsync("APS error", alertBody, "OK"); }
+        catch { /* if no MainPage yet (shouldn't happen here), fall back to status bar */ }
+    }
+
+    private static string? ClassifyApsError(string body)
+    {
+        if (string.IsNullOrEmpty(body)) return null;
+        // Specific 403 patterns we've documented in CLAUDE-VIEWER.md.
+        if (body.Contains("ProductAccessRequiresCapacity", StringComparison.OrdinalIgnoreCase))
+            return "Your APS account is out of cloud credits OR the file type isn't included in this account's entitlements. NWD typically costs more credits than NWC. Check https://aps.autodesk.com → your app → Cloud Credits / APIs.";
+        if (body.Contains("Token exchange access denied", StringComparison.OrdinalIgnoreCase) ||
+            body.Contains("Token exchange denied", StringComparison.OrdinalIgnoreCase))
+            return "APS denied the request. Most likely cause: out of cloud credits or missing entitlement for this file type. NWD translation is significantly more expensive than NWC and may require a Construction / BIM 360 entitlement on some accounts.";
+        if (body.Contains("Bucket key", StringComparison.OrdinalIgnoreCase) && body.Contains("invalid", StringComparison.OrdinalIgnoreCase))
+            return "The bucket key is invalid. Open Settings (gear icon) and ensure the Bucket Key is lowercase letters / digits / underscores only — no hyphens, no uppercase. 3-128 characters. Must be globally unique across all APS apps.";
+        if (body.Contains("invalid_client", StringComparison.OrdinalIgnoreCase))
+            return "Client ID or Secret rejected by APS. Open Settings and re-enter. Make sure they match the values shown at https://aps.autodesk.com → your app.";
+        return null;
     }
 
     private void OnNewTabClicked(object? sender, EventArgs e)
