@@ -18,17 +18,12 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
-		<!-- Display name -->
-		<ApplicationTitle>HelloWorld_IOS</ApplicationTitle>
+		<!-- Display name + Bundle ID + Versions are now Configuration-conditional
+		     (see PropertyGroups below). Debug keeps the free-tier Bootstrap identity
+		     so daily F5 to Orlando's iPad continues to work; Release uses production
+		     identifiers for the App Store Connect / ABM / Intune distribution path.
+		     See plan: my-next-milestone-is-zazzy-peacock.md, Phase 1. -->
 
-		<!-- App Identifier — reusing Bootstrap's bundle ID so we can reuse the existing free-tier
-		     provisioning profile created by Xcode. Free Personal Team can't auto-create new profiles
-		     for new bundle IDs from VS Pair-to-Mac. -->
-		<ApplicationId>com.orlandohernandez.Bootstrap</ApplicationId>
-
-		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-		<ApplicationVersion>1</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -45,9 +40,36 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'tizen'">6.5</SupportedOSPlatformVersion>
 	</PropertyGroup>
 
-	<!-- iOS device signing — Manual provisioning (free Apple ID Personal Team).
-	     Cert + profile created via Xcode bootstrap. Manual mode bypasses VS's
-	     "Automatic Provisioning needs an account" gate (free tier can't sign into VS Apple Accounts). -->
+	<!-- ============================================================================
+	     Debug identity: free-tier Bootstrap. Daily dev / F5 to Orlando's iPad.
+	     Keep this block intact through any Release/distribution work. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<ApplicationId>com.orlandohernandez.Bootstrap</ApplicationId>
+		<ApplicationTitle>HelloWorld_IOS</ApplicationTitle>
+		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<ApplicationVersion>1</ApplicationVersion>
+	</PropertyGroup>
+
+	<!-- ============================================================================
+	     Release identity: production / Custom App distribution via App Store Connect
+	     → ABM → Intune. Bundle ID is PERMANENT once first uploaded to App Store
+	     Connect — coordinate with the Apple Developer Org account holder before
+	     the first Release build is submitted. ApplicationVersion MUST increment on
+	     every App Store Connect upload (App Store Connect rejects re-uploads of the
+	     same ApplicationVersion for the same ApplicationDisplayVersion). -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<ApplicationId>com.accoes.nwd3dviewer</ApplicationId>
+		<ApplicationTitle>3D Model Viewer</ApplicationTitle>
+		<ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+		<ApplicationVersion>1</ApplicationVersion>
+	</PropertyGroup>
+
+	<!-- ============================================================================
+	     iOS device signing.
+
+	     Debug: free Apple ID Personal Team — cert + profile created via Xcode
+	     bootstrap. Manual provisioning bypasses VS's "Automatic Provisioning needs
+	     an account" gate (free tier can't sign into VS Apple Accounts). -->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug'">
 		<CodesignKey>Apple Development: orlando2503@gmail.com (97JK54NP2N)</CodesignKey>
 		<CodesignProvision>iOS Team Provisioning Profile: com.orlandohernandez.Bootstrap</CodesignProvision>
@@ -55,6 +77,20 @@
 	<PropertyGroup Condition="'$(TargetFramework)'=='net10.0-ios'">
 	  <ProvisioningType>manual</ProvisioningType>
 	  <CodesignKey>iPhone Developer</CodesignKey>
+	</PropertyGroup>
+
+	<!-- Release: paid Apple Developer Program (Organization) — Apple Distribution
+	     cert + App Store provisioning profile. The XXXXXXXXXX placeholders below
+	     get filled in when Phase 0 of the distribution plan completes (Apple Org
+	     enrollment grants a Team ID; cert + profile created at developer.apple.com).
+	     Until those values are real, Release builds will NOT sign successfully —
+	     that's intentional. Debug F5 is unaffected. -->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Release'">
+		<ProvisioningType>manual</ProvisioningType>
+		<CodesignKey>Apple Distribution: ACCO Engineered Systems Inc (XXXXXXXXXX)</CodesignKey>
+		<CodesignProvision>NwdViewer App Store</CodesignProvision>
+		<ArchiveOnBuild>true</ArchiveOnBuild>
+		<RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
 	</PropertyGroup>
 
 	<ItemGroup>

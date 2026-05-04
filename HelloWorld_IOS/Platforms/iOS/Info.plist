@@ -6,9 +6,12 @@
 	<string>com.orlandohernandez.Bootstrap</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- iPad only. iPhone (1) removed — the MAUI layout is iPad-tuned and the
+	     Custom App distribution targets managed iPads only. If iPhone support
+	     ever becomes a requirement, undo this AND tune the responsive layout
+	     in ViewerPage.xaml. -->
 	<key>UIDeviceFamily</key>
 	<array>
-		<integer>1</integer>
 		<integer>2</integer>
 	</array>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -30,6 +33,14 @@
 	</array>
 	<key>XSAppIconAssets</key>
 	<string>Assets.xcassets/appicon.appiconset</string>
+
+	<!-- Export-compliance declaration. The app uses only Apple's built-in HTTPS
+	     (SecureStorage / WKWebView fetches) — no custom crypto, no exempt-from-export
+	     primitives. Setting this to false skips the export-compliance question on
+	     every App Store Connect upload. Re-evaluate if the app ever adds custom
+	     crypto, end-to-end encryption, or third-party encryption libraries. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 
 	<!-- Custom UTIs for the 3D model formats we open. None of these have a
 	     public Apple-defined UTI, so we declare our own. The Document Picker
