@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.orlandohernandez.Bootstrap</string>
+	<string>com.accoes.nwd3dviewer</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!-- iPad only. iPhone (1) removed — the MAUI layout is iPad-tuned and the
@@ -50,7 +50,7 @@
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.ifc</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.ifc</string>
 			<key>UTTypeDescription</key><string>Industry Foundation Classes Model</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -59,7 +59,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.gltf</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.gltf</string>
 			<key>UTTypeDescription</key><string>glTF Model</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -68,7 +68,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.glb</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.glb</string>
 			<key>UTTypeDescription</key><string>glTF Binary Model</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -77,7 +77,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.obj</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.obj</string>
 			<key>UTTypeDescription</key><string>Wavefront OBJ Model</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.text</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -86,7 +86,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.fbx</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.fbx</string>
 			<key>UTTypeDescription</key><string>FBX Model</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -95,7 +95,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.stl</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.stl</string>
 			<key>UTTypeDescription</key><string>Stereolithography Model</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -104,7 +104,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.nwd</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.nwd</string>
 			<key>UTTypeDescription</key><string>Navisworks Document</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -113,7 +113,7 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.orlandohernandez.nwc</string>
+			<key>UTTypeIdentifier</key><string>com.accoes.nwc</string>
 			<key>UTTypeDescription</key><string>Navisworks Cache</string>
 			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
@@ -133,20 +133,20 @@
 			<key>LSHandlerRank</key><string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.orlandohernandez.ifc</string>
-				<string>com.orlandohernandez.gltf</string>
-				<string>com.orlandohernandez.glb</string>
-				<string>com.orlandohernandez.obj</string>
-				<string>com.orlandohernandez.fbx</string>
-				<string>com.orlandohernandez.stl</string>
-				<string>com.orlandohernandez.nwd</string>
-				<string>com.orlandohernandez.nwc</string>
+				<string>com.accoes.ifc</string>
+				<string>com.accoes.gltf</string>
+				<string>com.accoes.glb</string>
+				<string>com.accoes.obj</string>
+				<string>com.accoes.fbx</string>
+				<string>com.accoes.stl</string>
+				<string>com.accoes.nwd</string>
+				<string>com.accoes.nwc</string>
 			</array>
 		</dict>
 	</array>
 
 	<!-- Sandbox: Files-app integration. Lets the user place models in
-	     "On My iPad / HelloWorld_IOS" and lets external apps open files
+	     "On My iPad / 3D Model Viewer" and lets external apps open files
 	     stored there. -->
 	<key>UIFileSharingEnabled</key><true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key><true/>

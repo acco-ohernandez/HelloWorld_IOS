@@ -69,7 +69,7 @@ A helper script at the solution root: `deploy-ipad.ps1` — see "Deploying" belo
 ## How a load happens (data flow)
 
 1. User taps **Open** in the toolbar. `ViewerPage.OnOpenClicked` calls `FilePicker.PickMultipleAsync`.
-2. iOS Document Picker opens — integrates with Files app, iCloud Drive, and any signed-in Document Provider extensions (Box, Google Drive). Filtering relies on the **custom UTIs** declared in `Platforms/iOS/Info.plist` under `UTExportedTypeDeclarations` (`com.orlandohernandez.{ifc,gltf,glb,obj,fbx,stl}`).
+2. iOS Document Picker opens — integrates with Files app, iCloud Drive, and any signed-in Document Provider extensions (Box, Google Drive). Filtering relies on the **custom UTIs** declared in `Platforms/iOS/Info.plist` under `UTExportedTypeDeclarations` (`com.accoes.{ifc,gltf,glb,obj,fbx,stl,nwd,nwc}`).
 3. `PickedFileImporter.ImportAsync` opens a security-scoped stream from each `FileResult` and copies the bytes into `Path.Combine(FileSystem.CacheDirectory, "tabs", tabId.ToString(), filename)`.
 4. `MainViewModel.AddOfflineTab` creates a `TabViewModel` and sets it active.
 5. `ViewerBridge.LoadOffline(tabId, url, format)` posts a `loadOffline` message to JS. URL is `nwdviewer-files://{tabId}/{filename}`.
@@ -162,7 +162,7 @@ NWD/NWC files route through the **Autodesk Platform Services** cloud-translation
 - `MainViewModel.cs` — APS surface fully un-stubbed. `_aps` cached across calls; `InvalidateApsServices()` called by SettingsPage on Save so updated credentials take effect on the next translation. `MainViewModel` is now `IDisposable`.
 - `Views/ViewerPage.xaml(.cs)` — added gear (⚙) toolbar button between **Properties** and **Theme**. `OpenFilesAsync` splits picks into APS (.nwd / .nwc) and offline streams; APS files run sequentially because translation jobs are credit-paying server work and APS rate-limits parallel calls. **Auto-prompt** for SettingsPage if the user picks an APS file with no credentials saved.
 - `Services/ViewerBridge.cs` — `selection` case calls `MainViewModel.LoadApsPropertiesAsync`; `apsDiag` and `error` cases now real handlers.
-- `Platforms/iOS/Info.plist` — added `com.orlandohernandez.nwd` and `.nwc` to `UTExportedTypeDeclarations` and `LSItemContentTypes`.
+- `Platforms/iOS/Info.plist` — added `com.accoes.nwd` and `.nwc` to `UTExportedTypeDeclarations` and `LSItemContentTypes` (originally registered as `com.orlandohernandez.*`; renamed when the app moved to the production `com.accoes.nwd3dviewer` Bundle ID on 2026-05-07).
 
 **Settings + credentials flow:**
 - Persistent ⚙ gear button in the toolbar opens SettingsPage anytime.

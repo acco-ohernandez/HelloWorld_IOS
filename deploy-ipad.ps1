@@ -38,8 +38,8 @@ $MacHost    = '192.168.1.139'
 $MacUser    = 'orlandohernandez'
 $SshKey     = "$env:USERPROFILE\.ssh\id_ed25519_mac"
 $KnownHosts = "$env:TEMP\known_hosts_mac"
-$BundleId   = 'com.orlandohernandez.Bootstrap'
-$AppName    = 'HelloWorld_IOS'
+$BundleId   = 'com.accoes.nwd3dviewer'
+$AppName    = 'HelloWorld_IOS'   # MSBuild .app folder name = csproj name; not the home-screen title
 # --------------------------------------------------------------------------
 
 $Ssh = $null

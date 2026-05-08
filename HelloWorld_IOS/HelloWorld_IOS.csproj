@@ -18,11 +18,14 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
-		<!-- Display name + Bundle ID + Versions are now Configuration-conditional
-		     (see PropertyGroups below). Debug keeps the free-tier Bootstrap identity
-		     so daily F5 to Orlando's iPad continues to work; Release uses production
-		     identifiers for the App Store Connect / ABM / Intune distribution path.
-		     See plan: my-next-milestone-is-zazzy-peacock.md, Phase 1. -->
+		<!-- Production identity (paid Apple Developer Program, Individual enrollment
+		     under orlando2503@gmail.com, Team ID 8RJY4X4Y3H). Both Debug and Release
+		     now use this Bundle ID + Title. Versions still differ by config (see
+		     PropertyGroups below). The previous free-tier identity
+		     (com.orlandohernandez.Bootstrap, "HelloWorld_IOS") was retired when paid
+		     enrollment activated and the 7-day Personal Team cert expired. -->
+		<ApplicationId>com.accoes.nwd3dviewer</ApplicationId>
+		<ApplicationTitle>3D Model Viewer</ApplicationTitle>
 
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
@@ -41,53 +44,58 @@
 	</PropertyGroup>
 
 	<!-- ============================================================================
-	     Debug identity: free-tier Bootstrap. Daily dev / F5 to Orlando's iPad.
-	     Keep this block intact through any Release/distribution work. -->
+	     Versions only — Bundle ID + Title come from the top-level PropertyGroup
+	     (production identity, shared across configs). Debug = daily F5 to test
+	     iPad. Release = App Store Connect uploads; ApplicationVersion MUST
+	     increment on every upload (App Store Connect rejects re-uploads with
+	     the same ApplicationVersion under the same ApplicationDisplayVersion). -->
 	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-		<ApplicationId>com.orlandohernandez.Bootstrap</ApplicationId>
-		<ApplicationTitle>HelloWorld_IOS</ApplicationTitle>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 	</PropertyGroup>
 
-	<!-- ============================================================================
-	     Release identity: production / Custom App distribution via App Store Connect
-	     → ABM → Intune. Bundle ID is PERMANENT once first uploaded to App Store
-	     Connect — coordinate with the Apple Developer Org account holder before
-	     the first Release build is submitted. ApplicationVersion MUST increment on
-	     every App Store Connect upload (App Store Connect rejects re-uploads of the
-	     same ApplicationVersion for the same ApplicationDisplayVersion). -->
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<ApplicationId>com.accoes.nwd3dviewer</ApplicationId>
-		<ApplicationTitle>3D Model Viewer</ApplicationTitle>
 		<ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 	</PropertyGroup>
 
 	<!-- ============================================================================
-	     iOS device signing.
+	     iOS device signing (paid Apple Developer Program, Individual enrollment,
+	     Team ID 8RJY4X4Y3H).
 
-	     Debug: free Apple ID Personal Team — cert + profile created via Xcode
-	     bootstrap. Manual provisioning bypasses VS's "Automatic Provisioning needs
-	     an account" gate (free tier can't sign into VS Apple Accounts). -->
+	     Debug: Apple Development cert + Xcode-auto-managed iOS Team Provisioning
+	     Profile for the production Bundle ID. The 1-year cert + profile are
+	     generated on the Mac the first time the paid Apple ID is signed into
+	     Xcode and a build is attempted (or via developer.apple.com manually).
+	     The cert hash below (97JK54NP2N) was the Personal Team cert pre-upgrade;
+	     after paid enrollment, run `security find-identity -v -p codesigning`
+	     on the Mac and update the parenthesized hash if Apple reissued the cert. -->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug'">
 		<CodesignKey>Apple Development: orlando2503@gmail.com (97JK54NP2N)</CodesignKey>
-		<CodesignProvision>iOS Team Provisioning Profile: com.orlandohernandez.Bootstrap</CodesignProvision>
+		<CodesignProvision>iOS Team Provisioning Profile: com.accoes.nwd3dviewer</CodesignProvision>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(TargetFramework)'=='net10.0-ios'">
 	  <ProvisioningType>manual</ProvisioningType>
 	  <CodesignKey>iPhone Developer</CodesignKey>
 	</PropertyGroup>
 
-	<!-- Release: paid Apple Developer Program (Organization) — Apple Distribution
-	     cert + App Store provisioning profile. The XXXXXXXXXX placeholders below
-	     get filled in when Phase 0 of the distribution plan completes (Apple Org
-	     enrollment grants a Team ID; cert + profile created at developer.apple.com).
-	     Until those values are real, Release builds will NOT sign successfully —
-	     that's intentional. Debug F5 is unaffected. -->
+	<!-- Release: Apple Distribution cert + App Store provisioning profile. Cert is
+	     created at developer.apple.com → Certificates → +. The legal name
+	     "Orlando Hernandez" reflects Individual enrollment under
+	     orlando2503@gmail.com — verify with `security find-identity` after the
+	     cert is created and adjust if Apple uses a different display name. The
+	     App Store profile must be named exactly "NwdViewer App Store" (matches
+	     CodesignProvision below). Until both exist on the Mac, Release builds
+	     will NOT sign successfully — that's intentional. Debug is unaffected.
+
+	     Note: Custom App via Apple Business Manager (the original distribution
+	     target) requires Organization enrollment, NOT Individual. For Individual,
+	     options are: public App Store, TestFlight (1000 testers max), Ad Hoc
+	     (100 devices/year by UDID). To unlock Custom App + ABM + Intune later,
+	     upgrade enrollment to Organization (separate $99/yr, requires D-U-N-S). -->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Release'">
 		<ProvisioningType>manual</ProvisioningType>
-		<CodesignKey>Apple Distribution: ACCO Engineered Systems Inc (XXXXXXXXXX)</CodesignKey>
+		<CodesignKey>Apple Distribution: Orlando Hernandez (8RJY4X4Y3H)</CodesignKey>
 		<CodesignProvision>NwdViewer App Store</CodesignProvision>
 		<ArchiveOnBuild>true</ArchiveOnBuild>
 		<RuntimeIdentifier>ios-arm64</RuntimeIdentifier>

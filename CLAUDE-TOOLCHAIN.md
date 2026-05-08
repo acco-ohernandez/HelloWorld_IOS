@@ -1,16 +1,18 @@
 # HelloWorld_IOS — Build & Deploy Toolchain Reference
 
-The hard-won institutional knowledge about how the **Windows-VS → Mac → iPad** pipeline for this project actually works: pairing, signing, free-tier provisioning, the 7-day cert expiry workaround, common breakages and their fixes. **This doc is the toolchain reference; for what the project does and how the code is structured, see [CLAUDE-VIEWER.md](CLAUDE-VIEWER.md).**
+The hard-won institutional knowledge about how the **Windows-VS → Mac → iPad** pipeline for this project actually works: pairing, signing, provisioning, common breakages and their fixes. **This doc is the toolchain reference; for what the project does and how the code is structured, see [CLAUDE-VIEWER.md](CLAUDE-VIEWER.md).**
 
-The project began on 2026-04-27 as a Hello World pipeline test (which is where the toolchain knowledge below was captured). It became a real .NET MAUI iPad app — a 3D Model Viewer host — starting 2026-04-28; the toolchain documented here is unchanged through that transition. Bundle ID, signing identity, provisioning profile, Mac IP, and free-Apple-Developer-account constraints all carry over verbatim.
+The project began on 2026-04-27 as a Hello World pipeline test (which is where the toolchain knowledge below was captured). It became a real .NET MAUI iPad app — a 3D Model Viewer host — starting 2026-04-28. **2026-05-07: paid Apple Developer Program (Individual enrollment, $99/yr, same orlando2503@gmail.com Apple ID, Team ID `8RJY4X4Y3H` preserved)** activated; the free-tier Personal Team identity (`com.orlandohernandez.Bootstrap` + 7-day cert) has been retired. The free-tier sections below are kept as historical record but no longer apply to the live toolchain.
 
 ## Quick orientation
 
 - **Solution:** `HelloWorld_IOS.sln`
 - **Project:** `HelloWorld_IOS/HelloWorld_IOS.csproj`
 - **TFMs:** `net10.0-ios` (iPad target) + `net10.0-windows10.0.19041.0` (local Windows test target)
-- **Bundle ID:** `com.orlandohernandez.Bootstrap` — intentionally reusing the bundle ID from the Xcode "Bootstrap" project (see "Free-tier provisioning" below)
-- **Display Name:** HelloWorld_IOS
+- **Bundle ID:** `com.accoes.nwd3dviewer` — registered at developer.apple.com under Team ID `8RJY4X4Y3H`. Permanent once first uploaded to App Store Connect.
+- **Display Name (home-screen icon):** `3D Model Viewer`
+- **Display Name (App Store Connect listing):** `NWD Viewer v1` (editable until first build submitted for review)
+- **Custom UTIs renamed:** `com.accoes.{ifc,gltf,glb,obj,fbx,stl,nwd,nwc}` (Info.plist)
 
 ## Environment (verified working)
 
@@ -35,7 +37,7 @@ The project began on 2026-04-27 as a Hello World pipeline test (which is where t
 
 ### Test iPad
 - iPad mini (6th gen), iOS 26.0
-- Apple ID `orlando2503@gmail.com` signed into Xcode (Personal Team = free tier)
+- Apple ID `orlando2503@gmail.com` signed into Xcode — **paid Apple Developer Program, Individual enrollment** (Team ID `8RJY4X4Y3H`, legal name "Orlando Hernandez"). 1-year cert validity, no more 7-day expiry dance.
 - Developer Mode enabled (Settings → Privacy & Security → Developer Mode)
 - Trusted via Settings → General → VPN & Device Management → Apple ID → Trust
 
@@ -61,11 +63,12 @@ Located in `HelloWorld_IOS/HelloWorld_IOS.csproj`. Key sections and **why each o
 ```
 Removed Android/MacCatalyst/Tizen. Why: avoids needing `maui-android` etc. workloads we don't use. Adding them back would require installing those workloads on Windows.
 
-### Bundle ID reuses Bootstrap
+### Bundle ID + Title (production identity, paid program)
 ```xml
-<ApplicationId>com.orlandohernandez.Bootstrap</ApplicationId>
+<ApplicationId>com.accoes.nwd3dviewer</ApplicationId>
+<ApplicationTitle>3D Model Viewer</ApplicationTitle>
 ```
-Why: see "Free-tier provisioning" below. Free Apple ID can't auto-create new profiles for new bundle IDs from VS, so we reuse Bootstrap's. **Change this once you have a paid developer account.**
+At top-level PropertyGroup. Both Debug and Release inherit (versions still differ per config). Registered at developer.apple.com under Team ID `8RJY4X4Y3H` (Individual enrollment). The previous free-tier `com.orlandohernandez.Bootstrap` workaround is retired — see the "Free-tier provisioning" section below for historical context.
 
 ### Xcode version bypass
 ```xml
@@ -73,29 +76,43 @@ Why: see "Free-tier provisioning" below. Free Apple ID can't auto-create new pro
 ```
 Why: .NET for iOS workload 26.2.10233 expects Xcode 26.3, but Mac has 26.4.1. The check is a strict major.minor match (not minimum). For Hello World this is fine. Remove this if the app starts using iOS 26.4-only APIs that need real bindings.
 
-### Manual provisioning + explicit cert/profile
+### Manual provisioning + explicit cert/profile (current)
 ```xml
 <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug'">
     <CodesignKey>Apple Development: orlando2503@gmail.com (97JK54NP2N)</CodesignKey>
-    <CodesignProvision>iOS Team Provisioning Profile: com.orlandohernandez.Bootstrap</CodesignProvision>
+    <CodesignProvision>iOS Team Provisioning Profile: com.accoes.nwd3dviewer</CodesignProvision>
 </PropertyGroup>
 <PropertyGroup Condition="'$(TargetFramework)'=='net10.0-ios'">
     <ProvisioningType>manual</ProvisioningType>
 </PropertyGroup>
+
+<PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Release'">
+    <ProvisioningType>manual</ProvisioningType>
+    <CodesignKey>Apple Distribution: Orlando Hernandez (8RJY4X4Y3H)</CodesignKey>
+    <CodesignProvision>NwdViewer App Store</CodesignProvision>
+    <ArchiveOnBuild>true</ArchiveOnBuild>
+    <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
+</PropertyGroup>
 ```
-Why: VS's "Automatic Provisioning" mode gates on the Apple Accounts dialog (Tools → Options → Xamarin → Apple Accounts), which requires App Store Connect API keys — paid accounts only. Free tier MUST use Manual mode. The `<ProvisioningType>manual</ProvisioningType>` was written by VS when we switched the Properties UI to Manual; the cert and profile names were written by hand.
+Why manual mode persists post-paid: VS Automatic Provisioning could now work (paid accounts can generate App Store Connect API keys for Tools → Options → Xamarin → Apple Accounts), but manual is precise, predictable, and the existing pipeline already works this way. No reason to switch.
+
+The Debug cert hash `(97JK54NP2N)` was the Personal Team display ID. After paid upgrade, run `security find-identity -v -p codesigning` on the Mac and update the parenthesized hash if Apple reissued the cert.
+
+The Release Distribution cert + `NwdViewer App Store` profile must be created at developer.apple.com → Certificates / Profiles before the first Release build will sign.
 
 ### Info.plist requires CFBundleIdentifier
 `Platforms/iOS/Info.plist` has:
 ```xml
 <key>CFBundleIdentifier</key>
-<string>com.orlandohernandez.Bootstrap</string>
+<string>com.accoes.nwd3dviewer</string>
 ```
-Why: VS's Provisioning Profile dropdown filters profiles by bundle ID read from Info.plist (not csproj). Without this, the dropdown shows "No matching profiles found" even when the profile exists on Mac.
+Why: VS's Provisioning Profile dropdown filters profiles by bundle ID read from Info.plist (not csproj). Without this, the dropdown shows "No matching profiles found" even when the profile exists on Mac. (csproj `<ApplicationId>` *also* sets this at build time, but having both keeps VS's design-time tooling happy.)
 
-## Free-tier Apple ID provisioning (the painful part)
+## Free-tier Apple ID provisioning (HISTORICAL — superseded by paid program 2026-05-07)
 
-This is what made today's setup take 6+ hours. **All of this disappears with a paid Apple Developer Program account.**
+> The section below documents the original free-tier setup that ran from 2026-04-27 through 2026-05-07. Kept for context. The 7-day cert dance no longer applies; with paid Individual enrollment the Development cert is valid 1 year and the App ID was registered explicitly at developer.apple.com.
+
+This is what made the original setup take 6+ hours. **All of this disappears with a paid Apple Developer Program account — and as of 2026-05-07, it has.**
 
 ### Why VS can't bootstrap a free-tier cert
 - VS Pair-to-Mac's Apple Accounts dialog wants App Store Connect API keys → paid only.
@@ -142,23 +159,110 @@ After everything was configured, VS's Error List kept showing `Automatic Provisi
 5. iPad: Settings → General → VPN & Device Management → tap `orlando2503@gmail.com` → **Trust**.
 6. Tap app icon on iPad home screen — launches.
 
-## When you migrate to a paid Apple Developer account
+## Paid Apple Developer Program — migration (complete 2026-05-07)
 
-Most of the friction above disappears:
-- VS Apple Accounts dialog accepts the API key — Automatic Provisioning works.
-- Profiles auto-create for any bundle ID from VS.
-- Cert validity becomes 1 year (not 7 days).
-- Can register specific bundle IDs in App Store Connect upfront.
-- TestFlight beta + Ad Hoc + App Store distribution all unlocked.
+Most of the free-tier friction is gone:
+- 1-year cert validity (not 7 days).
+- Bundle IDs registered explicitly at developer.apple.com.
+- TestFlight beta + Ad Hoc + App Store distribution unlocked.
+- Custom App via Apple Business Manager: **NOT available on Individual enrollment** — would require Org enrollment ($99/yr separate, requires D-U-N-S). See the "Phase 3 distribution" discussion at the end of this doc.
 
-Steps when you make the switch:
-1. Buy Apple Developer Program ($99/yr Individual or $299/yr Enterprise — verify Enterprise eligibility before purchasing).
-2. Generate App Store Connect API key (App Store Connect → Users and Access → Keys).
-3. Add to VS via Tools → Options → Xamarin → Apple Accounts.
-4. Switch this project's Bundle Signing Scheme from Manual back to **Automatic Provisioning** in Properties.
-5. Change the bundle ID to a real production-style one (e.g., `com.accoes.helloworldios` or whatever naming convention you settle on).
-6. Remove the `<CodesignKey>` and `<CodesignProvision>` overrides from csproj — let Automatic mode pick them.
-7. Optionally remove the `<ValidateXcodeVersion>false</ValidateXcodeVersion>` override once .NET for iOS workload catches up to Xcode 26.4.
+What was done (all confirmed end-to-end on 2026-05-07):
+1. ✅ Purchased Apple Developer Program — Individual, under `orlando2503@gmail.com` (Team ID `8RJY4X4Y3H` preserved from the prior Personal Team).
+2. ✅ Registered new App ID at developer.apple.com → Identifiers → `com.accoes.nwd3dviewer` (Explicit, no special capabilities).
+3. ✅ Created App Store Connect record (`NWD Viewer v1`, SKU `nwd3dviewer-2026`).
+4. ✅ Updated csproj + Info.plist + deploy-ipad.ps1 + custom UTIs (`com.accoes.{ifc,gltf,glb,obj,fbx,stl,nwd,nwc}`) to use the production identity.
+5. ✅ Confirmed Xcode → Settings → Accounts shows Role = **Admin**, Certificates+Identifiers+Profiles green check, 2 provisioned devices. Apple preserved the existing Personal Team Development cert through the upgrade — `Apple Development: orlando2503@gmail.com (97JK54NP2N)` is still valid (now 1-year expiry instead of 7-day), so csproj's CodesignKey didn't need a hash update.
+6. ✅ Generated Development provisioning profile for the new Bundle ID via Xcode auto-management (used `~/Desktop/Bootstrap` as the host project — set its Bundle ID to `com.accoes.nwd3dviewer`, Team to Orlando Hernandez, "Automatically manage signing" ON, Xcode generated `iOS Team Provisioning Profile: com.accoes.nwd3dviewer` and registered both iPads' UDIDs).
+7. ✅ Symlinked legacy MobileDevice path to Xcode's auth-managed profile dir (see "Profile location bridge" below). One-time setup; survives auto-cleanup.
+8. ✅ Debug F5 to iPad working again, app appears as **3D Model Viewer**.
+9. ✅ Generated Apple Distribution cert via Xcode → Settings → Accounts → Manage Certificates → + → Apple Distribution (one-click; no manual CSR dance needed).
+10. ✅ Generated App Store provisioning profile named exactly `NwdViewer App Store` at developer.apple.com → Profiles → + → App Store. Downloaded `.mobileprovision`, scp'd to Mac → auto-picked up by symlinked dir.
+11. ✅ First Release `.ipa` built, packaged, uploaded to App Store Connect via Transporter (build `1.0.0 (1)`, ID `6767396471`), processed, installed on iPad via TestFlight Internal Testing.
+
+### Profile location bridge (the symlink — important)
+
+VS Pair-to-Mac reads provisioning profiles from `~/Library/MobileDevice/Provisioning Profiles/`. Xcode 26 writes them to `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`. **macOS now auto-cleans the legacy MobileDevice path** within seconds of any file landing there — so the old `cp` recipe (still present in the historical section above) does not survive on macOS 26.
+
+The fix is a one-time symlink:
+
+```bash
+rmdir ~/Library/MobileDevice/Provisioning\ Profiles
+ln -s ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles \
+      ~/Library/MobileDevice/Provisioning\ Profiles
+```
+
+This way every profile Xcode generates (or you scp in) shows up to VS instantly — no copy step ever again, including after cert renewals. Verify with:
+
+```bash
+ls -la ~/Library/MobileDevice/Provisioning\ Profiles
+# Should show:  -> /Users/orlandohernandez/Library/Developer/Xcode/UserData/Provisioning Profiles
+```
+
+## First Release upload — App Store distribution path
+
+Walks through what's now a working end-to-end pipeline. Reuses Pair-to-Mac for the build; uploads via Transporter (or `xcrun altool` once API keys are set up).
+
+### Prerequisites (one-time, all complete as of 2026-05-07)
+- Apple Distribution cert in Mac keychain — confirm with `security find-identity -v -p codesigning` (look for `"Apple Distribution: Orlando Hernandez (8RJY4X4Y3H)"`).
+- App Store provisioning profile named **exactly** `NwdViewer App Store` (matches csproj `<CodesignProvision>`) at `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`. Profile must show ProvisionedDevices=0 + get-task-allow=false (App Store profile, not Ad Hoc/Development).
+- Symlink in place (above).
+
+### Per-release procedure
+
+1. **Bump versions in csproj's Release PropertyGroup:**
+   ```xml
+   <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>  <!-- semantic, what users see -->
+   <ApplicationVersion>2</ApplicationVersion>                     <!-- monotonic, MUST increment per upload -->
+   ```
+   App Store Connect rejects re-uploads with the same `ApplicationVersion` under the same `ApplicationDisplayVersion`. Convention: bump `ApplicationVersion` per upload (every fresh build), `ApplicationDisplayVersion` per release.
+
+2. **Build Release in VS** (do NOT F5 — see "Don't F5 Release" gotcha below).
+   - Switch Configuration → **Release**, target → **net10.0-ios**
+   - **Build → Build Solution** (Ctrl+Shift+B)
+   - VS will surface a "deployment errors / debug not enabled" dialog at the end if the run target is set to a physical iPad — **ignore it**. The build itself will have succeeded; the deploy step is what fails (correctly — App Store profiles can't be installed via devicectl).
+
+3. **Locate the signed `.app` on the Mac:**
+   ```
+   ~/Library/Caches/Xamarin/mtbs/builds/HelloWorld_IOS/<hash>/bin/Release/net10.0-ios/ios-arm64/HelloWorld_IOS.app
+   ```
+   Verify with `codesign -dvvv <path>` — Authority should be `Apple Distribution: Orlando Hernandez (8RJY4X4Y3H)`.
+
+4. **Package the `.ipa` manually** — VS's "Build Solution" runs `dotnet build`, which does NOT honor `<ArchiveOnBuild>true</ArchiveOnBuild>`. That property only fires under `dotnet publish`. So either run `dotnet publish` on the Mac, or just zip the `.app` into a `Payload/` folder by hand (an `.ipa` is literally that):
+
+   ```bash
+   APP="$HOME/Library/Caches/Xamarin/mtbs/builds/HelloWorld_IOS/<hash>/bin/Release/net10.0-ios/ios-arm64/HelloWorld_IOS.app"
+   OUT="$HOME/Desktop/NwdViewer-1.0.0-build1.ipa"
+   WORK="/tmp/ipa-build-$$"
+   rm -rf "$WORK" "$OUT"
+   mkdir -p "$WORK/Payload"
+   cp -R "$APP" "$WORK/Payload/"
+   cd "$WORK" && zip -qry "$OUT" Payload
+   rm -rf "$WORK"
+   ```
+
+   Or just run `pwsh ./deploy-appstore.ps1` (this script automates the above end-to-end from Windows via SSH).
+
+5. **Upload to App Store Connect** — two options:
+   - **Transporter.app** (free, Mac App Store): drag the `.ipa` in, click Deliver. Easiest for a first upload.
+   - **`xcrun altool`** (CLI, scriptable):
+     ```bash
+     xcrun altool --upload-app --type ios --file <path-to-ipa> \
+       --apiKey <Key-ID> --apiIssuer <Issuer-ID>
+     ```
+     Requires an App Store Connect API key (App Store Connect → Users and Access → Integrations → App Store Connect API). The `.p8` file goes in `~/.appstoreconnect/private_keys/`.
+
+6. **Wait ~10–30 min** for App Store Connect to process the build (it'll appear under TestFlight tab as "Complete" when ready). Then add to an Internal Testing group → tester accepts the email invite (or enters the redemption code in the TestFlight app on iPad) → app installs.
+
+### Don't F5 Release
+
+Release config signs with the App Store provisioning profile. App Store profiles cannot be installed on devices directly — they're "upload to App Store Connect, then iOS re-signs and installs from there" only. If you F5 a Release build, devicectl returns:
+
+```
+0xe800801f (Attempted to install a Beta profile without the proper entitlement.)
+```
+
+That's iOS correctly refusing the install. Always **Build** (Ctrl+Shift+B), never **F5/Run**, for Release. Then upload the `.ipa`.
 
 ## Useful diagnostic commands
 
@@ -193,30 +297,35 @@ dotnet workload list
 4. VS → Tools → iOS → Pair to Mac → **Orlando's MacBook Pro** → Connect → enter Mac password → green chain icon.
 5. If green icon doesn't appear: re-pair, restart VS, verify Mac IP hasn't changed (consider setting static IP on company network).
 
-## File map (for future-me)
+## File map (toolchain-relevant only)
 
 ```
 HelloWorld_IOS/
-├── HelloWorld_IOS.sln                        # Solution
-├── CLAUDE.md                                 # This file
+├── HelloWorld_IOS.sln                        # Solution (HelloWorld_IOS + NwdViewer.Aps projects)
+├── CLAUDE-TOOLCHAIN.md                       # This file
+├── CLAUDE-VIEWER.md                          # Project structure / what the app does (separate doc)
+├── deploy-ipad.ps1                           # SSH-based Debug device deploy (workaround for VS deploy bug)
+├── deploy-appstore.ps1                       # SSH-based Release build → .ipa packaging (App Store flow)
 └── HelloWorld_IOS/
-    ├── HelloWorld_IOS.csproj                 # Project (signing config lives here)
-    ├── App.xaml(.cs)                         # MAUI App lifecycle
-    ├── AppShell.xaml(.cs)                    # MAUI Shell navigation
-    ├── MainPage.xaml(.cs)                    # Default Hello World page
-    ├── MauiProgram.cs                        # MAUI host builder
-    ├── GlobalXmlns.cs                        # XAML namespace defaults
-    ├── Platforms/
-    │   ├── iOS/
-    │   │   ├── AppDelegate.cs                # iOS UIApplicationDelegate
-    │   │   ├── Info.plist                    # CFBundleIdentifier set here
-    │   │   └── Program.cs                    # iOS entry
-    │   └── MacCatalyst/                      # Unused (TFM removed) but files remain
-    └── Resources/                            # Icons, splash, fonts, images
+    ├── HelloWorld_IOS.csproj                 # Project (signing config + Bundle ID + version)
+    └── Platforms/iOS/Info.plist              # CFBundleIdentifier + UTI declarations + ITSAppUsesNonExemptEncryption
 ```
 
+For the rest of the project structure (Views, ViewModels, Services, NwdViewer.Aps, etc.), see [CLAUDE-VIEWER.md](CLAUDE-VIEWER.md).
+
+## Phase 3 distribution — pending decision
+
+Original plan (in `plans/my-next-milestone-is-zazzy-peacock.md`) was Custom App via Apple Business Manager → Microsoft Intune. **That path is not available on Individual enrollment** — Custom App requires Organization enrollment ($99/yr separate, requires D-U-N-S, ~1-2 weeks lead time). Pending re-evaluation; in the meantime the v1 build is reachable via TestFlight Internal Testing.
+
+Realistic Individual-enrollment options:
+- **TestFlight External Testing** — up to 10K testers, requires brief Beta App Review (~24 hr), each build expires 90 days after upload. Good for 5–500-person internal company rollout if you don't mind the expiry.
+- **Ad Hoc** — up to 100 devices/year, manual UDID list, install via Apple Configurator or MDM. Good for a small fixed device list with no auto-update.
+- **Public App Store** — full App Review, anyone can install. Permanent listing.
+- **Upgrade to Org enrollment** — unlocks original Custom App path. Highest effort but gives the cleanest Intune-managed experience.
+
 ## Outside this project, on the Mac
-- `~/Desktop/Bootstrap/` — throwaway Xcode project that bootstrapped the cert/profile. **Do not delete.**
-- `~/Library/Developer/Xcode/UserData/Provisioning Profiles/<UUID>.mobileprovision` — actual profile location.
-- `~/Library/MobileDevice/Provisioning Profiles/<UUID>.mobileprovision` — copy made for VS.
-- Login keychain — contains the Apple Development cert.
+- `~/Desktop/Bootstrap/` — throwaway Xcode project. Originally bootstrapped the free-tier cert; on 2026-05-07 its Bundle ID was changed to `com.accoes.nwd3dviewer` to host the new Development profile generation via Xcode auto-management. Don't delete — re-using it is faster than spinning up a new dummy project the next time a profile needs regenerating.
+- `~/Library/Developer/Xcode/UserData/Provisioning Profiles/<UUID>.mobileprovision` — actual profile location (Xcode 26 default). All profiles live here.
+- `~/Library/MobileDevice/Provisioning Profiles` — **symlink** to the above (NOT a copy — macOS auto-cleans copies). VS Pair-to-Mac reads from this symlinked path.
+- Login keychain — contains both Apple Development and Apple Distribution certs (`security find-identity -v -p codesigning` to inspect).
+- `~/Desktop/NwdViewer-<version>-build<n>.ipa` — convention for Release-build artifacts. Created by `deploy-appstore.ps1` (or by hand). Upload via Transporter or `xcrun altool`.
