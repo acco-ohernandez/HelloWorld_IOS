@@ -102,7 +102,7 @@ Original plan was **Custom App via Apple Business Manager → Microsoft Intune**
 | Apple Developer Program (Individual) | $99 | Annually |
 | Intel Mac build host | (already owned) | One-time |
 | GitHub repo | $0 | (private repo, free tier OK) |
-| Autodesk APS | Per-credit | Pay-as-you-go (~5–15 credits per NWC translation, ~30–100+ per NWD; account-level entitlement also matters) |
+| Autodesk APS | Flex tokens + qualifying Autodesk product subscription | Model Derivative is a "rated" API under APS's new two-tier model (Dec 2025). NWC translation: works with Flex tokens on the Free tier (~0.5 tokens per complex job). NWD translation: under the May 2026 update, requires a qualifying Autodesk product subscription tied to the account — Flex tokens alone don't unlock it. Exact subscription requirement isn't publicly documented; contact APS Support to confirm what's needed. See `CLAUDE-VIEWER.md` "Known APS errors" for the full diagnosis. |
 | Microsoft Intune | (existing company tenant) | Already in place |
 | Org upgrade (if pursued later) | $99 | Annually, separate from Individual |
 

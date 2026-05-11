@@ -259,11 +259,57 @@ public partial class ViewerPage : ContentPage
     {
         if (string.IsNullOrEmpty(body)) return null;
         // Specific 403 patterns we've documented in CLAUDE-VIEWER.md.
+
+        // 'ProductAccessRequiresCapacity' is an undocumented internal APS policy name
+        // (it does not appear anywhere in Autodesk's public docs — verified via web
+        // search 2026-05-11). Best inference from the authoritative APS docs we DO
+        // have:
+        //   - APS Business Model Evolution (Dec 8, 2025) introduced a two-tier
+        //     Free + Paid model. Model Derivative became a "rated" API with
+        //     monthly free-tier caps.
+        //     https://aps.autodesk.com/blog/aps-business-model-evolution
+        //   - May 2026 update added subscription-tied API access: "If you have a
+        //     qualifying Autodesk product subscription, you'll receive monthly API
+        //     usage included." Exact mapping of subscription -> API not public.
+        //     https://aps.autodesk.com/blog/aps-continues-evolve-data-model-apis-included-subscriptions-plus-flexible-ways-scale
+        // Empirically verified for this app:
+        //   - NWC translates successfully (same auth/app/token)
+        //   - NWD denied with this policy
+        //   - Purchasing 300 Flex tokens did not change the response
+        //   - /modelderivative/v2/designdata/formats lists 'nwd' as supported
+        // Conclusion: NWD requires a qualifying Autodesk product subscription
+        // under the new model that this account does not have. Autodesk has not
+        // publicly documented which subscription qualifies; only APS Support can
+        // confirm for a given account.
         if (body.Contains("ProductAccessRequiresCapacity", StringComparison.OrdinalIgnoreCase))
-            return "Your APS account is out of cloud credits OR the file type isn't included in this account's entitlements. NWD typically costs more credits than NWC. Check https://aps.autodesk.com → your app → Cloud Credits / APIs.";
+            return "APS rejected NWD translation for this account. NWC files translate " +
+                   "successfully on the same account — so this is an account-level " +
+                   "entitlement gate, not credits, auth, or a code bug.\n\n" +
+                   "APS launched a new two-tier pricing model on Dec 8, 2025, and in May " +
+                   "2026 began tying API access to specific Autodesk product subscriptions. " +
+                   "NWD translation appears to require a \"qualifying Autodesk product " +
+                   "subscription\" under the new model — exact requirements aren't " +
+                   "publicly documented.\n\n" +
+                   "To resolve:\n" +
+                   "1. Check entitlements at https://manage.autodesk.com → Reporting → " +
+                   "Resource and API usage.\n" +
+                   "2. Contact Autodesk APS Support (https://aps.autodesk.com/support) " +
+                   "for the definitive answer on which subscription unlocks NWD.";
+
+        // 'Token exchange denied' is the generic APS denial wrapper. If the more-specific
+        // ProductAccessRequiresCapacity match above didn't fire, the policy name is
+        // something we haven't seen yet — fall back to a more general explanation.
         if (body.Contains("Token exchange access denied", StringComparison.OrdinalIgnoreCase) ||
             body.Contains("Token exchange denied", StringComparison.OrdinalIgnoreCase))
-            return "APS denied the request. Most likely cause: out of cloud credits or missing entitlement for this file type. NWD translation is significantly more expensive than NWC and may require a Construction / BIM 360 entitlement on some accounts.";
+            return "APS denied the translation request. This is usually an account-level " +
+                   "entitlement issue rather than a credits issue — APS's two-tier model " +
+                   "(launched Dec 2025) and subscription-tied API access (May 2026) gate " +
+                   "some operations behind a qualifying Autodesk product subscription. " +
+                   "Check https://manage.autodesk.com → Reporting → Resource and API " +
+                   "usage to see what's entitled on this account, then contact APS Support " +
+                   "(https://aps.autodesk.com/support) with the full error below if you " +
+                   "can't identify the missing entitlement.";
+
         if (body.Contains("Bucket key", StringComparison.OrdinalIgnoreCase) && body.Contains("invalid", StringComparison.OrdinalIgnoreCase))
             return "The bucket key is invalid. Open Settings (gear icon) and ensure the Bucket Key is lowercase letters / digits / underscores only — no hyphens, no uppercase. 3-128 characters. Must be globally unique across all APS apps.";
         if (body.Contains("invalid_client", StringComparison.OrdinalIgnoreCase))
