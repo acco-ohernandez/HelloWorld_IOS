@@ -454,7 +454,23 @@
         }
       }
       dispose() {
-        if (this.mode !== 'offline') return;
+        if (this.mode !== 'offline') {
+          // APS branch: the singleton apsViewer is shared across all APS tabs.
+          // If THIS tab's model is the one currently loaded into it, unload —
+          // otherwise the next time the APS container becomes visible (e.g.,
+          // from a CreateTab+SwitchTab that's about to fail at translation),
+          // the user sees the stale geometry from the closed tab still painted
+          // on the APS viewer's canvas. Reported 2026-05-11 after closing an
+          // NWC tab then attempting an NWD that hit ProductAccessRequiresCapacity.
+          if (currentApsTabId === this.tabId && apsViewer) {
+            try {
+              const models = apsViewer.getVisibleModels?.() || [];
+              models.forEach((m) => { try { apsViewer.unloadModel(m); } catch (_) {} });
+            } catch (_) {}
+            currentApsTabId = null;
+          }
+          return;
+        }
         const disposeTree = (root) => root?.traverse?.((o) => {
           o.geometry?.dispose();
           const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);

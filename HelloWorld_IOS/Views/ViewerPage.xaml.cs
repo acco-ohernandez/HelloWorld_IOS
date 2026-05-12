@@ -232,6 +232,22 @@ public partial class ViewerPage : ContentPage
         }
         catch (Exception ex)
         {
+            // Translation failed AFTER we eagerly created+switched the tab to
+            // give the user immediate status feedback. Tear that phantom tab
+            // back down now — otherwise the user is left with: (1) an empty
+            // APS tab in the strip they have to manually close, and (2) the
+            // 'aps-active' CSS class still on, showing the APS viewer area
+            // (which thanks to the dispose() fix in viewer.html is now empty,
+            // but was previously revealing the stale model from the prior tab).
+            // Mirrors the cleanup sequence in OnCloseTabClicked.
+            try
+            {
+                _bridge.CloseTab(tab.TabId);
+                _store.Delete(tab.TabId);
+                _vm.CloseTab(tab);
+            }
+            catch { /* tab teardown is best-effort; don't mask the original error */ }
+
             await ShowApsErrorAsync(ex.Message, result.FileName);
         }
     }
