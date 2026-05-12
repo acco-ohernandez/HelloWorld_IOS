@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using HelloWorld_IOS.Services;
 using NwdViewer.Aps;
@@ -121,11 +120,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             StatusText = $"Uploading {objectKey} to APS...";
             var uploadProgress = new Progress<int>(p => ProgressPercent = Math.Min(p, 95));
             var urn = await aps.Oss.UploadAsync(localPath, objectKey, uploadProgress, ct);
-            Debug.WriteLine($"[aps] uploaded {localPath} urn={urn}");
+            Logger.Write("aps", $"uploaded {localPath} urn={urn}");
 
             StatusText = "Starting translation...";
             ProgressPercent = 0;
-            await aps.ModelDerivative.StartTranslationAsync(urn, ct);
+            await aps.ModelDerivative.StartTranslationAsync(urn, ct: ct);
 
             StatusText = "Translating (can take several minutes for large files)...";
             await aps.ModelDerivative.WaitForTranslationAsync(urn,
@@ -160,7 +159,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 // APS sometimes returns 200 with no collection while still indexing.
                 var raw = _aps.ModelDerivative.LastPropertiesRawBody ?? "(no body)";
-                Debug.WriteLine($"[aps] properties: no collection for dbId={objectId}. Raw: {(raw.Length > 400 ? raw[..400] + "..." : raw)}");
+                Logger.Write("aps", $"properties: no collection for dbId={objectId}. Raw: {(raw.Length > 400 ? raw[..400] + "..." : raw)}");
                 tab.Properties.Add(new PropertyNode { Key = "Info",
                     Value = "Properties not available yet — APS may still be indexing. Try again in a moment." });
                 StatusText = $"Object #{objectId}: properties not yet available.";
@@ -187,7 +186,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[aps] failed to load properties for object {objectId}: {ex}");
+            Logger.WriteException("aps", ex, $"failed to load properties for object {objectId}");
             StatusText = $"Properties error: {ex.Message}";
         }
     }

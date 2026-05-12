@@ -16,7 +16,10 @@ public sealed class ModelDerivativeClient
         _options = options;
     }
 
-    public async Task StartTranslationAsync(string urn, CancellationToken ct = default)
+    // forceRetranslate=true sets x-ads-force, which makes APS re-run the policy gate
+    // and burn credits even if a manifest already exists. Default off; flip on only
+    // when intentionally reprocessing.
+    public async Task StartTranslationAsync(string urn, bool forceRetranslate = false, CancellationToken ct = default)
     {
         var token = await _auth.GetInternalTokenAsync(ct);
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl}/modelderivative/v2/designdata/job")
@@ -34,7 +37,8 @@ public sealed class ModelDerivativeClient
             })
         };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        req.Headers.Add("x-ads-force", "true");
+        if (forceRetranslate)
+            req.Headers.Add("x-ads-force", "true");
 
         using var resp = await _http.SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode)

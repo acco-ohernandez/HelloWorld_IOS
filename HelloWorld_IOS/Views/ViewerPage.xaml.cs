@@ -260,6 +260,9 @@ public partial class ViewerPage : ContentPage
     /// </summary>
     private async Task ShowApsErrorAsync(string fullMessage, string filename)
     {
+        // Persist the full body before the modal eats it — Diagnostics page reads this back.
+        Logger.Write("aps-error", $"file={filename}\n{fullMessage}");
+
         // Status bar gets a short summary. Full message goes to the alert.
         _vm.StatusText = $"APS error opening {filename} (tap for details).";
 

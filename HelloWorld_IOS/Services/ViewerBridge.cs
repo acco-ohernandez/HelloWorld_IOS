@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using HelloWorld_IOS.ViewModels;
 
@@ -133,12 +132,12 @@ public sealed class ViewerBridge
                 }
 
                 case "apsDiag":
-                    Debug.WriteLine($"[aps-diag] {GetStringOrNull(doc.RootElement, "msg")}");
+                    Logger.Write("aps-diag", GetStringOrNull(doc.RootElement, "msg") ?? "");
                     break;
 
                 case "imageData":
                     // v3: image/PDF capture path. Not in v2.
-                    Debug.WriteLine("[v3] imageData received without an active capture request");
+                    Logger.Write("v3", "imageData received without an active capture request");
                     break;
 
                 case "error":
@@ -150,7 +149,7 @@ public sealed class ViewerBridge
                     var jsFile  = GetStringOrNull(doc.RootElement, "filename");
                     var jsLine  = GetIntOrNull(doc.RootElement, "lineno");
                     var jsStack = GetStringOrNull(doc.RootElement, "stack");
-                    Debug.WriteLine($"[js-error] {jsMsg} @ {jsFile}:{jsLine}\n{jsStack}");
+                    Logger.Write("js-error", $"{jsMsg} @ {jsFile}:{jsLine}\n{jsStack}");
                     _vm.StatusText = $"JS error: {jsMsg}";
                     _vm.IsBusy = false;
                     break;
@@ -158,7 +157,7 @@ public sealed class ViewerBridge
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[bridge] failed to parse: {ex.Message} :: {rawJson}");
+            Logger.WriteException("bridge", ex, $"failed to parse: {rawJson}");
         }
     }
 

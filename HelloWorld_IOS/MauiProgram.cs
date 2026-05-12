@@ -2,6 +2,7 @@ using HelloWorld_IOS.Controls;
 using HelloWorld_IOS.Services;
 using HelloWorld_IOS.ViewModels;
 using HelloWorld_IOS.Views;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace HelloWorld_IOS;
@@ -25,6 +26,7 @@ public static class MauiProgram
 #endif
 			});
 
+		builder.Services.AddSingleton<SessionLogger>();
 		builder.Services.AddSingleton<MainViewModel>();
 		builder.Services.AddSingleton<CredentialStore>();
 		builder.Services.AddSingleton<TabFileStore>();
@@ -32,6 +34,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<ViewerPage>();
 		builder.Services.AddTransient<SettingsViewModel>();
 		builder.Services.AddTransient<SettingsPage>();
+		builder.Services.AddTransient<DiagnosticsViewModel>();
+		builder.Services.AddTransient<DiagnosticsPage>();
 
 		// APS factory: per-call construction of the HttpClient + three APS
 		// clients. Cheap (no I/O at construction). MainViewModel's TranslateAsync
@@ -44,6 +48,8 @@ public static class MauiProgram
 		builder.Logging.AddDebug();
 #endif
 
-		return builder.Build();
+		var app = builder.Build();
+		Logger.Init(app.Services.GetRequiredService<SessionLogger>());
+		return app;
 	}
 }

@@ -6,8 +6,7 @@ public sealed class AuthClient
 {
     private readonly HttpClient _http;
     private readonly ApsOptions _options;
-    private TokenResponse? _cached;
-    private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
+    private readonly Dictionary<string, (TokenResponse Token, DateTimeOffset ExpiresAt)> _cache = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public AuthClient(HttpClient http, ApsOptions options)
@@ -22,14 +21,18 @@ public sealed class AuthClient
     public async Task<string> GetViewerTokenAsync(CancellationToken ct = default)
         => await GetTokenAsync("viewables:read", ct);
 
+    // Cache is keyed by scope string. The previous implementation cached a single token
+    // regardless of scope; once a viewer-scoped token was fetched, every subsequent
+    // internal-scoped request returned it too, which APS rejects on Model Derivative
+    // with "Token exchange access denied".
     private async Task<string> GetTokenAsync(string scope, CancellationToken ct)
     {
         _options.Validate();
         await _lock.WaitAsync(ct);
         try
         {
-            if (_cached != null && DateTimeOffset.UtcNow < _expiresAt)
-                return _cached.AccessToken;
+            if (_cache.TryGetValue(scope, out var entry) && DateTimeOffset.UtcNow < entry.ExpiresAt)
+                return entry.Token.AccessToken;
 
             var body = new FormUrlEncodedContent(new[]
             {
@@ -58,8 +61,7 @@ public sealed class AuthClient
             var token = await resp.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken: ct)
                 ?? throw new InvalidOperationException("APS auth returned an empty body.");
 
-            _cached = token;
-            _expiresAt = DateTimeOffset.UtcNow.AddSeconds(token.ExpiresInSeconds - 60);
+            _cache[scope] = (token, DateTimeOffset.UtcNow.AddSeconds(token.ExpiresInSeconds - 60));
             return token.AccessToken;
         }
         finally

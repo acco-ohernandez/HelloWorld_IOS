@@ -55,6 +55,15 @@
 
                 <Label Text="Stored in iOS Keychain. Cleared if you delete the app."
                        FontSize="11" TextColor="#666" Margin="0,8,0,0" />
+
+                <BoxView HeightRequest="1" Color="#333" Margin="0,16,0,8" />
+                <Label Text="Troubleshooting" FontSize="14" FontAttributes="Bold" TextColor="White" />
+                <Button Text="Open diagnostics (session logs)"
+                        Clicked="OnDiagnosticsClicked"
+                        BackgroundColor="#2b2b2b" TextColor="White"
+                        FontSize="13" Padding="12,8" HorizontalOptions="Start" />
+                <Label Text="View, share, or clear the last 50 app session logs. Useful when filing a bug report or chasing an APS error."
+                       FontSize="11" TextColor="#888" LineBreakMode="WordWrap" />
             </VerticalStackLayout>
         </ScrollView>
 
