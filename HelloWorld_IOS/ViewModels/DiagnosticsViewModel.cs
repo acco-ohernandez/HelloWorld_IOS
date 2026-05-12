@@ -29,6 +29,8 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
         StatusText = Sessions.Count == 0
             ? "No sessions yet."
             : $"{Sessions.Count} session(s). Current is at the top.";
+        // Auto-pick the most recent so Share / Delete work without an explicit tap.
+        if (Sessions.Count > 0) Selected = Sessions[0];
     }
 
     partial void OnSelectedChanged(SessionLogEntry? value)
@@ -49,12 +51,21 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
 
     public async Task ShareSelectedAsync()
     {
-        if (Selected is null) { StatusText = "Select a session first."; return; }
-        await Share.Default.RequestAsync(new ShareFileRequest
+        var target = Selected ?? (Sessions.Count > 0 ? Sessions[0] : null);
+        if (target is null) { StatusText = "Nothing to share."; return; }
+        try
         {
-            Title = $"Export {Selected.Name}",
-            File = new ShareFile(Selected.FullPath),
-        });
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = $"Export {target.Name}",
+                File = new ShareFile(target.FullPath),
+            });
+            StatusText = $"Shared {target.Name}.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Share failed: {ex.Message}";
+        }
     }
 
     public async Task ShareAllAsZipAsync()

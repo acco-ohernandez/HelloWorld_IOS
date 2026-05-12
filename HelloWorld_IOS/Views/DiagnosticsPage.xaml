@@ -40,9 +40,23 @@
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="vm:SessionLogEntry">
                         <Grid Padding="10,8" RowDefinitions="Auto,Auto" RowSpacing="2">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal">
+                                        <VisualState.Setters>
+                                            <Setter Property="BackgroundColor" Value="Transparent" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Selected">
+                                        <VisualState.Setters>
+                                            <Setter Property="BackgroundColor" Value="#3c7adc" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
                             <Label Grid.Row="0" Text="{Binding Name}"
                                    TextColor="White" FontSize="13" LineBreakMode="TailTruncation" />
-                            <Label Grid.Row="1" FontSize="11" TextColor="#888">
+                            <Label Grid.Row="1" FontSize="11" TextColor="#bbb">
                                 <Label.Text>
                                     <MultiBinding StringFormat="{}{0} · {1}">
                                         <Binding Path="DisplayTime" />
@@ -91,7 +105,7 @@
         <!-- Status bar -->
         <Grid Grid.Row="2" BackgroundColor="#181818" Padding="10,4" ColumnDefinitions="*,Auto">
             <Label Grid.Column="0" Text="{Binding StatusText}"
-                   TextColor="#888" FontSize="11" VerticalOptions="Center"
+                   TextColor="#dcdcdc" FontSize="11" VerticalOptions="Center"
                    LineBreakMode="TailTruncation" />
             <Button Grid.Column="1" Text="Clear all (keep active)"
                     Clicked="OnClearAllClicked"
