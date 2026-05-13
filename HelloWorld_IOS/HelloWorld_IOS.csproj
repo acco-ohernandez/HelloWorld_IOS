@@ -18,6 +18,13 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
+		<!-- MVVMTK0045: [ObservableProperty] source-gen on fields isn't AOT-compatible
+		     under WinRT (UWP/WinUI 3). Only fires on the net10.0-windows TFM. iOS is
+		     the ship target; Windows builds just exist so VS doesn't choke on the
+		     designer. Silenced project-wide rather than rewriting every ObservableProperty
+		     field as a partial property. -->
+		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
+
 		<!-- Production identity (paid Apple Developer Program, Individual enrollment
 		     under orlando2503@gmail.com, Team ID 8RJY4X4Y3H). Both Debug and Release
 		     now use this Bundle ID + Title. Versions still differ by config (see

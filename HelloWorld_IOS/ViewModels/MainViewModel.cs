@@ -17,7 +17,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private TabViewModel? activeTab;
 
-    public ObservableCollection<TabViewModel> Tabs { get; } = new();
+    public ObservableCollection<TabViewModel> Tabs { get; } = [];
 
     public MainViewModel(CredentialStore credentials, Func<ApsCredentials, ApsServices> apsFactory)
     {
@@ -96,7 +96,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _aps = null;
     }
 
-    private async Task<ApsServices> EnsureServicesAsync(CancellationToken ct)
+    private async Task<ApsServices> EnsureServicesAsync()
     {
         if (_aps != null) return _aps;
         var creds = await _credentials.LoadAsync()
@@ -110,7 +110,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            var aps = await EnsureServicesAsync(ct);
+            var aps = await EnsureServicesAsync();
 
             StatusText = "Ensuring APS bucket...";
             ProgressPercent = 0;
