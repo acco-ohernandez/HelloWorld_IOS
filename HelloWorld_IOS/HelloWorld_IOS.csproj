@@ -56,7 +56,7 @@
 
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
 		<ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
-		<ApplicationVersion>1</ApplicationVersion>
+		<ApplicationVersion>2</ApplicationVersion>
 	</PropertyGroup>
 
 	<!-- ============================================================================

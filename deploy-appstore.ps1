@@ -44,13 +44,18 @@ param(
     # If set, attempts to upload via `xcrun altool` after packaging. Requires the
     # ASC_API_KEY_ID and ASC_API_ISSUER_ID environment variables on the Mac side,
     # plus the .p8 key file at ~/.appstoreconnect/private_keys/AuthKey_<KeyID>.p8.
-    [switch]$Upload
+    [switch]$Upload,
+
+    # Skip the post-package csproj <ApplicationVersion> auto-increment. Default
+    # behaviour is to bump on every successful run so the NEXT VS build produces
+    # a fresh build number that App Store Connect will accept.
+    [switch]$NoBump
 )
 
 $ErrorActionPreference = 'Stop'
 
 # --- Config ----------------------------------------------------------------
-$MacHost    = '192.168.1.139'
+$MacHost    = '172.31.29.117' # '192.168.1.139'
 $MacUser    = 'orlandohernandez'
 $SshKey     = "$env:USERPROFILE\.ssh\id_ed25519_mac"
 $KnownHosts = "$env:TEMP\known_hosts_mac"
@@ -119,6 +124,23 @@ if ([string]::IsNullOrWhiteSpace($appPath)) {
 Write-Host " ok"
 Write-Host "    $appPath"
 
+# --- 2b. Detect csproj drift: csproj edited after the last VS build -------
+# App Store Connect rejects re-uploads with the same CFBundleVersion. If the
+# user edited <ApplicationVersion> in csproj but didn't rebuild, the .app on
+# the Mac still embeds the old version - packaging it would either fail at
+# upload (duplicate) or upload the wrong build. The .app's embedded plist is
+# the source of truth for what got built.
+$embeddedBuild = (Invoke-Mac "plutil -extract CFBundleVersion raw '$appPath/Info.plist' 2>/dev/null").Trim()
+if ($embeddedBuild -and $embeddedBuild -ne $Build) {
+    Write-Host ""
+    Write-Host "  WARNING: csproj <ApplicationVersion>=$Build but the built .app embeds CFBundleVersion=$embeddedBuild." -ForegroundColor Yellow
+    Write-Host "  csproj was edited after the last VS Release build. To get a build with the new" -ForegroundColor Yellow
+    Write-Host "  csproj value, switch VS to Release config and Ctrl+Shift+B before re-running this script." -ForegroundColor Yellow
+    Write-Host "  Continuing with the embedded version $embeddedBuild for the .ipa filename." -ForegroundColor Yellow
+    Write-Host ""
+    $Build = $embeddedBuild
+}
+
 # --- 3. Sanity check codesign --------------------------------------------
 Write-Host "  Verifying codesign..."
 $cs = Invoke-Mac "codesign -dvvv '$appPath' 2>&1 | grep -E 'Authority|TeamIdentifier|Identifier='"
@@ -160,4 +182,42 @@ if ($Upload) {
     Write-Host "Next: upload to App Store Connect." -ForegroundColor Cyan
     Write-Host "  Easy path: Open Transporter.app on the Mac, drag the .ipa, click Deliver."
     Write-Host "  CLI path : Re-run with -Upload after configuring App Store Connect API key on the Mac."
+}
+
+# --- 6. Auto-bump <ApplicationVersion> for the next build ------------------
+# Runs last so a failed package/upload doesn't burn a version number. Reads
+# csproj's CURRENT Release-conditional value (NOT the $Build variable, which
+# may reflect the .app's embedded version after the drift check) and writes
+# back current+1. App Store Connect rejects duplicate CFBundleVersion under
+# the same CFBundleShortVersionString, so every successful upload needs the
+# next build to be unique.
+if (-not $NoBump) {
+    if (-not $csprojPath) { $csprojPath = Join-Path $PSScriptRoot "$AppName\$AppName.csproj" }
+    if (-not (Test-Path $csprojPath)) {
+        Write-Host "  Skipping auto-bump: csproj not found at $csprojPath." -ForegroundColor Yellow
+    } else {
+        $csprojText = Get-Content $csprojPath -Raw
+        # Single pattern that captures the entire Release PropertyGroup body
+        # around the ApplicationVersion number, so we only bump the Release one.
+        # 'Configuration..' (with .. as wildcard for '$(' + ')') matches
+        # '$(Configuration)' without needing to escape PS variable-interpolation.
+        $pattern = "(?<prefix>Configuration..\s*==\s*'Release'.*?<ApplicationVersion>)(?<num>\d+)(?<suffix></ApplicationVersion>)"
+        $regex   = [regex]::new($pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        $match   = $regex.Match($csprojText)
+        if ($match.Success) {
+            $current = [int]$match.Groups['num'].Value
+            $next    = $current + 1
+            $bumped  = $regex.Replace($csprojText, "`${prefix}$next`${suffix}", 1)
+            # PowerShell 7's Set-Content writes UTF-8 without BOM by default,
+            # preserving the csproj's existing encoding. -NoNewline avoids
+            # injecting a trailing newline that wasn't there before.
+            Set-Content -Path $csprojPath -Value $bumped -Encoding utf8NoBOM -NoNewline
+            Write-Host ""
+            Write-Host "  csproj <ApplicationVersion> bumped $current -> $next." -ForegroundColor Cyan
+            Write-Host "  Next VS Release build will embed CFBundleVersion=$next." -ForegroundColor Cyan
+            Write-Host "  (Pass -NoBump to skip this on future runs.)" -ForegroundColor DarkGray
+        } else {
+            Write-Host "  WARNING: couldn't find <ApplicationVersion> in csproj Release PropertyGroup to auto-bump." -ForegroundColor Yellow
+        }
+    }
 }
