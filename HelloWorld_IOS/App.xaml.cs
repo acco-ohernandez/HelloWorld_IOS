@@ -1,3 +1,4 @@
+using HelloWorld_IOS.Services;
 using HelloWorld_IOS.Views;
 
 namespace HelloWorld_IOS;
@@ -21,4 +22,11 @@ public partial class App : Application
 		var page = _services.GetRequiredService<ViewerPage>();
 		return new Window(new NavigationPage(page) { BarBackgroundColor = Color.FromArgb("#2b2b2b") });
 	}
+
+	// MAUI app-lifecycle hooks. Useful for debugging "did the app go to background
+	// while a translation was running?" - the gap in timestamps between OnSleep
+	// and OnResume corresponds to time spent suspended by iOS.
+	protected override void OnStart()  => Logger.Info("app.lifecycle", "OnStart (foreground)");
+	protected override void OnSleep()  => Logger.Info("app.lifecycle", "OnSleep (backgrounded)");
+	protected override void OnResume() => Logger.Info("app.lifecycle", "OnResume (returned to foreground)");
 }

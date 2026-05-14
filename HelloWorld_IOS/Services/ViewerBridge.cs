@@ -132,12 +132,12 @@ public sealed class ViewerBridge
                 }
 
                 case "apsDiag":
-                    Logger.Write("aps-diag", GetStringOrNull(doc.RootElement, "msg") ?? "");
+                    Logger.Info("viewer.js", $"apsDiag: {GetStringOrNull(doc.RootElement, "msg") ?? ""}");
                     break;
 
                 case "imageData":
                     // v3: image/PDF capture path. Not in v2.
-                    Logger.Write("v3", "imageData received without an active capture request");
+                    Logger.Warn("viewer.js", "imageData received without an active capture request (v3 feature)");
                     break;
 
                 case "error":
@@ -149,7 +149,7 @@ public sealed class ViewerBridge
                     var jsFile  = GetStringOrNull(doc.RootElement, "filename");
                     var jsLine  = GetIntOrNull(doc.RootElement, "lineno");
                     var jsStack = GetStringOrNull(doc.RootElement, "stack");
-                    Logger.Write("js-error", $"{jsMsg} @ {jsFile}:{jsLine}\n{jsStack}");
+                    Logger.Error("viewer.js", $"{jsMsg} @ {jsFile}:{jsLine}\n{jsStack}");
                     _vm.StatusText = $"JS error: {jsMsg}";
                     _vm.IsBusy = false;
                     break;
@@ -157,7 +157,7 @@ public sealed class ViewerBridge
         }
         catch (Exception ex)
         {
-            Logger.WriteException("bridge", ex, $"failed to parse: {rawJson}");
+            Logger.Error("bridge.error", $"failed to parse: {rawJson}", ex);
         }
     }
 

@@ -54,14 +54,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void AddTab(TabViewModel tab)
     {
         Tabs.Add(tab);
+        Logger.Info("tab.open", $"id={tab.TabId} mode={tab.Mode} title='{tab.Title}'");
         SetActive(tab);
     }
 
-    public void CloseTab(TabViewModel tab)
+    public void CloseTab(TabViewModel tab) => CloseTab(tab, reason: "user");
+
+    public void CloseTab(TabViewModel tab, string reason)
     {
         var index = Tabs.IndexOf(tab);
         if (index < 0) return;
         Tabs.Remove(tab);
+        Logger.Info("tab.close", $"id={tab.TabId} mode={tab.Mode} reason={reason}");
         if (ReferenceEquals(ActiveTab, tab))
         {
             var next = Tabs.Count == 0 ? null : Tabs[Math.Min(index, Tabs.Count - 1)];
@@ -120,7 +124,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             StatusText = $"Uploading {objectKey} to APS...";
             var uploadProgress = new Progress<int>(p => ProgressPercent = Math.Min(p, 95));
             var urn = await aps.Oss.UploadAsync(localPath, objectKey, uploadProgress, ct);
-            Logger.Write("aps", $"uploaded {localPath} urn={urn}");
+            Logger.Info("aps.upload", $"uploaded local={Path.GetFileName(localPath)} urn={urn}");
 
             StatusText = "Starting translation...";
             ProgressPercent = 0;
@@ -159,7 +163,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 // APS sometimes returns 200 with no collection while still indexing.
                 var raw = _aps.ModelDerivative.LastPropertiesRawBody ?? "(no body)";
-                Logger.Write("aps", $"properties: no collection for dbId={objectId}. Raw: {(raw.Length > 400 ? raw[..400] + "..." : raw)}");
+                Logger.Warn("aps.properties", $"no collection for dbId={objectId}. Raw: {(raw.Length > 400 ? raw[..400] + "..." : raw)}");
                 tab.Properties.Add(new PropertyNode { Key = "Info",
                     Value = "Properties not available yet — APS may still be indexing. Try again in a moment." });
                 StatusText = $"Object #{objectId}: properties not yet available.";
@@ -186,7 +190,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            Logger.WriteException("aps", ex, $"failed to load properties for object {objectId}");
+            Logger.Error("aps.properties", $"failed to load properties for object {objectId}", ex);
             StatusText = $"Properties error: {ex.Message}";
         }
     }

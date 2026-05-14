@@ -123,14 +123,35 @@ public partial class ViewerPage : ContentPage
                 // the system level. Post-pick we filter by extension.
             };
             var results = await FilePicker.PickMultipleAsync(options);
-            if (results is null) return;
+            if (results is null) { Logger.Info("file.pick", "user cancelled picker"); return; }
 
-            await OpenFilesAsync(results.Where(r => r is not null)!);
+            var picked = results.Where(r => r is not null).Select(r => r!).ToList();
+            foreach (var r in picked)
+            {
+                var size = TryGetFileSize(r);
+                Logger.Info("file.pick", $"{r.FileName} · {(size < 0 ? "?" : FormatBytes(size))} · ext={Path.GetExtension(r.FileName).ToLowerInvariant()}");
+            }
+            await OpenFilesAsync(picked);
         }
         catch (Exception ex)
         {
             _vm.StatusText = $"Open failed: {ex.Message}";
+            Logger.Error("file.pick", "picker threw", ex);
         }
+    }
+
+    private static long TryGetFileSize(FileResult? r)
+    {
+        if (r is null) return -1;
+        try { return new FileInfo(r.FullPath).Length; } catch { return -1; }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024L * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F2} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
     }
 
     private async Task OpenFilesAsync(IEnumerable<FileResult> results)
@@ -244,7 +265,7 @@ public partial class ViewerPage : ContentPage
             {
                 _bridge.CloseTab(tab.TabId);
                 _store.Delete(tab.TabId);
-                _vm.CloseTab(tab);
+                _vm.CloseTab(tab, reason: "failed-teardown");
             }
             catch { /* tab teardown is best-effort; don't mask the original error */ }
 
@@ -261,7 +282,7 @@ public partial class ViewerPage : ContentPage
     private async Task ShowApsErrorAsync(string fullMessage, string filename)
     {
         // Persist the full body before the modal eats it — Diagnostics page reads this back.
-        Logger.Write("aps-error", $"file={filename}\n{fullMessage}");
+        Logger.Error("aps.error", $"file={filename}\n{fullMessage}");
 
         // Status bar gets a short summary. Full message goes to the alert.
         _vm.StatusText = $"APS error opening {filename} (tap for details).";

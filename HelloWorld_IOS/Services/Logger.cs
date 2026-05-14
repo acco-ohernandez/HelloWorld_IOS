@@ -6,6 +6,23 @@ namespace HelloWorld_IOS.Services;
 /// Thin static facade so call sites can write a single line and have it tee to both
 /// Debug.WriteLine (for VS Output) and the persistent SessionLogger (for the in-app
 /// Diagnostics page). Initialized once during MauiProgram.CreateMauiApp().
+///
+/// Categories use a dotted hierarchy so a grep finds related lines quickly:
+///   app.start       app launch + build identity
+///   app.lifecycle   OnStart/OnSleep/OnResume + memory warnings
+///   app.settings    credentials/bucket changes (non-secret diff only)
+///   file.pick       file picker results
+///   tab.open/close  tab lifecycle
+///   aps.auth        token requests, scope, cache hit/miss
+///   aps.bucket      bucket create/exists
+///   aps.upload      OSS signed-S3 upload steps
+///   aps.translate   Model Derivative job POST
+///   aps.manifest    manifest polling cycles
+///   aps.metadata    metadata fetch
+///   aps.properties  object-properties fetch
+///   aps.error       full 4xx/5xx response bodies
+///   bridge.error    JS bridge parse failures
+///   viewer.js       JS-side errors / diag messages
 /// </summary>
 public static class Logger
 {
@@ -13,15 +30,21 @@ public static class Logger
 
     public static void Init(SessionLogger session) => _session = session;
 
-    public static void Write(string tag, string message)
+    public static void Info(string category, string message)
     {
-        if (_session != null) _session.Write(tag, message);
-        else Debug.WriteLine($"[{tag}] {message}");
+        if (_session != null) _session.Info(category, message);
+        else Debug.WriteLine($"[INFO ] [{category}] {message}");
     }
 
-    public static void WriteException(string tag, Exception ex, string? context = null)
+    public static void Warn(string category, string message)
     {
-        if (_session != null) _session.WriteException(tag, ex, context);
-        else Debug.WriteLine($"[{tag}] {context}: {ex}");
+        if (_session != null) _session.Warn(category, message);
+        else Debug.WriteLine($"[WARN ] [{category}] {message}");
+    }
+
+    public static void Error(string category, string message, Exception? ex = null)
+    {
+        if (_session != null) _session.Error(category, message, ex);
+        else Debug.WriteLine($"[ERROR] [{category}] {message}{(ex == null ? "" : $" :: {ex}")}");
     }
 }

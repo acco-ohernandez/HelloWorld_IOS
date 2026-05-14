@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 
 namespace NwdViewer.Aps;
@@ -31,8 +32,15 @@ public sealed class AuthClient
         await _lock.WaitAsync(ct);
         try
         {
+            var scopeLabel = ScopeLabel(scope);
             if (_cache.TryGetValue(scope, out var entry) && DateTimeOffset.UtcNow < entry.ExpiresAt)
+            {
+                var ttl = (int)(entry.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds;
+                ApsLog.Info("aps.auth", $"cache hit scope={scopeLabel} ttl={ttl}s");
                 return entry.Token.AccessToken;
+            }
+
+            ApsLog.Info("aps.auth", $"cache miss scope={scopeLabel} - fetching token");
 
             var body = new FormUrlEncodedContent(new[]
             {
@@ -49,10 +57,14 @@ public sealed class AuthClient
             };
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
 
+            var sw = Stopwatch.StartNew();
             using var resp = await _http.SendAsync(req, ct);
+            sw.Stop();
+
             if (!resp.IsSuccessStatusCode)
             {
                 var errBody = await resp.Content.ReadAsStringAsync(ct);
+                ApsLog.Error("aps.auth", $"{(int)resp.StatusCode} {resp.ReasonPhrase} in {sw.ElapsedMilliseconds} ms scope={scopeLabel} body={Truncate(errBody)}");
                 throw new HttpRequestException(
                     $"APS auth {(int)resp.StatusCode} {resp.ReasonPhrase}: " +
                     (string.IsNullOrWhiteSpace(errBody) ? "(no body)" : errBody.Trim()));
@@ -62,6 +74,7 @@ public sealed class AuthClient
                 ?? throw new InvalidOperationException("APS auth returned an empty body.");
 
             _cache[scope] = (token, DateTimeOffset.UtcNow.AddSeconds(token.ExpiresInSeconds - 60));
+            ApsLog.Info("aps.auth", $"200 in {sw.ElapsedMilliseconds} ms scope={scopeLabel} ttl={token.ExpiresInSeconds}s");
             return token.AccessToken;
         }
         finally
@@ -69,4 +82,14 @@ public sealed class AuthClient
             _lock.Release();
         }
     }
+
+    private static string ScopeLabel(string scope) => scope switch
+    {
+        "viewables:read" => "viewer",
+        _ when scope.Contains("data:write") => "internal",
+        _ => scope,
+    };
+
+    private static string Truncate(string s, int max = 300)
+        => string.IsNullOrEmpty(s) ? "(empty)" : (s.Length > max ? s[..max] + "..." : s);
 }

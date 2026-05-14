@@ -57,6 +57,18 @@ public sealed partial class SettingsViewModel : ObservableObject
         try
         {
             IsBusy = true;
+            // Log non-secret deltas: client-id prefix + full bucket key + whether
+            // secret was set. Never the full secret or full id.
+            var prior = await _credentials.LoadAsync();
+            var idPrefix = ClientId.Length > 6 ? ClientId[..6] + "..." : ClientId;
+            var bucketChanged = prior is null || prior.BucketKey != BucketKey.Trim();
+            var clientIdChanged = prior is null || prior.ClientId != ClientId.Trim();
+            var secretChanged = prior is null || prior.ClientSecret != ClientSecret.Trim();
+            Logger.Info("app.settings",
+                $"saving · clientId={idPrefix} (changed={clientIdChanged}) · " +
+                $"bucket={BucketKey.Trim()} (changed={bucketChanged}) · " +
+                $"secretChanged={secretChanged}");
+
             await _credentials.SaveAsync(new ApsCredentials(
                 ClientId.Trim(), ClientSecret.Trim(), BucketKey.Trim()));
             return true;
@@ -64,6 +76,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusText = $"Save failed: {ex.Message}";
+            Logger.Error("app.settings", "save failed", ex);
             return false;
         }
         finally

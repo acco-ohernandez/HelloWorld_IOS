@@ -4,10 +4,17 @@ using System.Text.RegularExpressions;
 
 namespace HelloWorld_IOS.Services;
 
+public enum LogLevel { Info, Warn, Error }
+
 /// <summary>
 /// Per-app-launch log file in {AppDataDirectory}/logs/. Keeps the most recent
 /// 50 sessions; older files are pruned at startup. Writes are flushed per line
 /// so a crash doesn't lose the last entry. Surfaced to the user via DiagnosticsPage.
+///
+/// Format: HH:mm:ss.fff [LEVEL] [category.subcategory] message
+///   - LEVEL is one of INFO / WARN / ERROR, padded to 5 chars.
+///   - category uses a dotted hierarchy: aps.upload, aps.translate, app.start, etc.
+///   - secrets (access_token / client_secret / Bearer tokens) are redacted before write.
 /// </summary>
 public sealed class SessionLogger : IDisposable
 {
@@ -37,8 +44,11 @@ public sealed class SessionLogger : IDisposable
                 AutoFlush = true,
             };
 
-            Write("session", $"Log started. App data: {FileSystem.AppDataDirectory}");
-            Write("session", $"Device: {DeviceInfo.Manufacturer} {DeviceInfo.Model} / {DeviceInfo.Platform} {DeviceInfo.VersionString}");
+            // Build-identity header: lets you correlate a log with the .ipa that produced it.
+            Info("app.start", $"NwdViewer v{AppInfo.Current.VersionString} build {AppInfo.Current.BuildString}");
+            Info("app.start", $"Device: {DeviceInfo.Manufacturer} {DeviceInfo.Model} · {DeviceInfo.Platform} {DeviceInfo.VersionString} · {DeviceInfo.Idiom}");
+            Info("app.start", $"App data: {FileSystem.AppDataDirectory}");
+            Info("app.start", $"Log dir:  {LogDirectory}");
         }
         catch (Exception ex)
         {
@@ -48,10 +58,20 @@ public sealed class SessionLogger : IDisposable
         }
     }
 
-    public void Write(string tag, string message)
+    public void Info(string category, string message)  => Write(LogLevel.Info, category, message);
+    public void Warn(string category, string message)  => Write(LogLevel.Warn, category, message);
+    public void Error(string category, string message, Exception? ex = null)
+    {
+        var text = ex is null
+            ? message
+            : $"{message}\n    {ex.GetType().Name}: {ex.Message}\n    {ex.StackTrace}";
+        Write(LogLevel.Error, category, text);
+    }
+
+    private void Write(LogLevel level, string category, string message)
     {
         if (_disposed) return;
-        var line = $"{DateTime.Now:HH:mm:ss.fff} [{tag}] {Redact(message)}";
+        var line = $"{DateTime.Now:HH:mm:ss.fff} [{LevelTag(level)}] [{category}] {Redact(message)}";
         Debug.WriteLine(line);
         if (_writer == null) return;
         lock (_gate)
@@ -61,11 +81,13 @@ public sealed class SessionLogger : IDisposable
         }
     }
 
-    public void WriteException(string tag, Exception ex, string? context = null)
+    private static string LevelTag(LogLevel level) => level switch
     {
-        var prefix = string.IsNullOrEmpty(context) ? "exception" : context;
-        Write(tag, $"{prefix}: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-    }
+        LogLevel.Info  => "INFO ",
+        LogLevel.Warn  => "WARN ",
+        LogLevel.Error => "ERROR",
+        _              => "?????",
+    };
 
     public IReadOnlyList<FileInfo> EnumerateSessions()
     {

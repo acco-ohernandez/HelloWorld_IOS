@@ -4,6 +4,7 @@ using HelloWorld_IOS.ViewModels;
 using HelloWorld_IOS.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NwdViewer.Aps;
 
 namespace HelloWorld_IOS;
 
@@ -50,6 +51,9 @@ public static class MauiProgram
 
 		var app = builder.Build();
 		Logger.Init(app.Services.GetRequiredService<SessionLogger>());
+		// Route NwdViewer.Aps' library-side diagnostics through our SessionLogger,
+		// without making the class library reference MAUI types.
+		ApsLog.SetSink(new ApsLogBridge());
 		return app;
 	}
 }
