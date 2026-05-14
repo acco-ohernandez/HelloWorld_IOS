@@ -92,13 +92,18 @@
                             FontSize="12" Padding="10,2" />
                 </Grid>
 
-                <ScrollView Grid.Row="1" Orientation="Both">
-                    <Label Text="{Binding SelectedContent}"
-                           TextColor="#dcdcdc"
-                           FontFamily="Courier New" FontSize="11"
-                           Padding="10"
-                           LineBreakMode="NoWrap" />
-                </ScrollView>
+                <!-- Editor (read-only) instead of Label: MAUI Label on iOS collapses
+                     multiline text to one line under LineBreakMode=NoWrap. Editor wraps
+                     UITextView so newlines render correctly, vertical scrolling is built
+                     in, and the user can long-press to select + copy individual lines. -->
+                <Editor Grid.Row="1"
+                        Text="{Binding SelectedContent}"
+                        IsReadOnly="True"
+                        FontFamily="Courier New" FontSize="11"
+                        TextColor="#dcdcdc"
+                        BackgroundColor="#141414"
+                        AutoSize="Disabled"
+                        Margin="6,4,6,4" />
             </Grid>
         </Grid>
 
