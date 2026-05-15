@@ -132,8 +132,16 @@ public sealed class ViewerBridge
                 }
 
                 case "apsDiag":
-                    Logger.Info("viewer.js", $"apsDiag: {GetStringOrNull(doc.RootElement, "msg") ?? ""}");
+                {
+                    var diagMsg = GetStringOrNull(doc.RootElement, "msg") ?? "";
+                    // Gate nav.* events (button presses, theme toggles, panel
+                    // collapses) on the Settings toggle. Everything else
+                    // (fit:, fit.frame:, pre-load, post-load, …) is unaffected.
+                    if (diagMsg.StartsWith("nav.", StringComparison.Ordinal) && !Logger.VerboseNavLogging)
+                        break;
+                    Logger.Info("viewer.js", $"apsDiag: {diagMsg}");
                     break;
+                }
 
                 case "imageData":
                     // v3: image/PDF capture path. Not in v2.

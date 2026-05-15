@@ -28,6 +28,22 @@ public static class Logger
 {
     private static SessionLogger? _session;
 
+    /// <summary>Preferences key for the "verbose navigation logging" toggle. Default true.</summary>
+    public const string VerboseNavLoggingKey = "NwdViewer.VerboseNavLogging";
+
+    /// <summary>
+    /// When true (default), nav.* lines from the JS viewer (button presses,
+    /// theme toggles, panel collapses) get written to the session log.
+    /// When false, those lines are dropped at the bridge before reaching
+    /// SessionLogger. Diagnostic dumps (fit:, fit.frame:, aps.* HTTP) are
+    /// unaffected.
+    /// </summary>
+    public static bool VerboseNavLogging
+    {
+        get => Preferences.Default.Get(VerboseNavLoggingKey, true);
+        set => Preferences.Default.Set(VerboseNavLoggingKey, value);
+    }
+
     public static void Init(SessionLogger session) => _session = session;
 
     public static void Info(string category, string message)

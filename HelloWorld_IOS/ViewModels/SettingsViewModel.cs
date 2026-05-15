@@ -17,6 +17,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string bucketKey = string.Empty;
     [ObservableProperty] private string statusText = string.Empty;
     [ObservableProperty] private bool isBusy;
+    [ObservableProperty] private bool verboseNavLogging = true;
 
     public bool IsValid =>
         !string.IsNullOrWhiteSpace(ClientId) &&
@@ -31,9 +32,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         _credentials = credentials;
     }
 
-    /// <summary>Pre-fill the form from existing keychain entries.</summary>
+    /// <summary>Pre-fill the form from existing keychain entries + Preferences.</summary>
     public async Task LoadAsync()
     {
+        VerboseNavLogging = Logger.VerboseNavLogging;
         var creds = await _credentials.LoadAsync();
         if (creds is null) return;
         ClientId = creds.ClientId;
@@ -71,6 +73,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
             await _credentials.SaveAsync(new ApsCredentials(
                 ClientId.Trim(), ClientSecret.Trim(), BucketKey.Trim()));
+            // Persist the nav-logging toggle alongside credentials. Stored in
+            // Preferences (NSUserDefaults), not the keychain - it isn't a secret.
+            Logger.VerboseNavLogging = VerboseNavLogging;
             return true;
         }
         catch (Exception ex)
