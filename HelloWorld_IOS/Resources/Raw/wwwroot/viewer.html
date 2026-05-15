@@ -332,10 +332,14 @@
     dummyCam.position.set(10, 10, 10);
     const controls = new OrbitControls(dummyCam, renderer.domElement);
     controls.enableDamping = true;
-    // Touch convention for iPad: 1-finger orbit, 2-finger pinch-zoom + pan.
-    // Matches CAD/AEC desktop intuition; tap-to-select still uses the
-    // pointerdown/up movement-threshold check elsewhere in this file.
-    controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    // Touch convention for iPad: 1-finger pan, 2-finger pinch-zoom + orbit.
+    // Matches Autodesk Viewer (NWC/NWD) and Navisworks Freedom on iPad. The
+    // earlier 1-finger-orbit mapping felt wrong because 1-finger drag traced
+    // a radial path around controls.target instead of moving the model
+    // linearly. Mouse mappings (left=orbit, right=pan, wheel=zoom) are
+    // configured separately by OrbitControls and unchanged.
+    // Tap-to-select uses the pointerdown/up movement-threshold check elsewhere.
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
     function resizeRenderer() {
       const w = offlineCt.clientWidth, h = offlineCt.clientHeight;
