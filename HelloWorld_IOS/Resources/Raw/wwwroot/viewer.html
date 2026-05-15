@@ -637,17 +637,22 @@
       return out;
     }
 
-    // Build a robust bounding box from the visible meshes. Algorithm:
-    //   1. Compute the *unweighted* centroid (simple average of mesh centers).
-    //      Equal weighting beats volume weighting for FBX exports: a single
-    //      huge "site" or "shared-coordinates" reference mesh would otherwise
-    //      dominate the volume sum and pull COM toward the wrong place.
-    //   2. Compute the median distance from centroid.
-    //   3. Drop meshes whose center is more than 4× the median distance from
-    //      the centroid — this excludes origin markers and survey references
-    //      that sit thousands of meters away while the actual model clusters
-    //      tightly elsewhere.
-    //   4. Return the union bbox of the surviving (inlier) meshes.
+    // Build a robust bounding box from the visible meshes. Two-stage filter:
+    //
+    //   STAGE A (center-position outliers): iteratively refine the centroid
+    //   while dropping meshes whose center is more than 3× the median
+    //   distance away. Catches survey markers / origin references that sit
+    //   thousands of meters from the actual building cluster.
+    //
+    //   STAGE B (extent outliers): from the surviving meshes, drop any whose
+    //   own bbox diagonal exceeds 20× the median diagonal. Catches large
+    //   "site" / "ground" / "shared-coordinates" meshes that happen to be
+    //   centered near the cluster but span far more space than any single
+    //   building element — they would otherwise blow up the union bbox and
+    //   force Fit to zoom way out.
+    //
+    //   Bails to a simple union for <4 meshes or if filters reject too much.
+    //   Emits a diag line so the session log records what got dropped.
     function getVisibleBoundingBox(root) {
       const boxes = collectVisibleMeshBoxes(root);
       if (boxes.length === 0) return new THREE.Box3();
@@ -658,32 +663,52 @@
       }
 
       const centers = boxes.map((b) => b.getCenter(new THREE.Vector3()));
+      const diags   = boxes.map((b) => b.getSize(new THREE.Vector3()).length());
 
-      // 1. Unweighted centroid.
-      const centroid = new THREE.Vector3();
-      for (const c of centers) centroid.add(c);
-      centroid.divideScalar(boxes.length);
+      // STAGE A: iterative center-outlier rejection.
+      let inliers = boxes.map((_, i) => i);
+      for (let pass = 0; pass < 3; pass++) {
+        const sum = new THREE.Vector3();
+        inliers.forEach((i) => sum.add(centers[i]));
+        const centroid = sum.divideScalar(inliers.length);
 
-      // 2. Median distance from centroid.
-      const dists = centers.map((c) => c.distanceTo(centroid));
-      const sortedDists = dists.slice().sort((a, b) => a - b);
-      const medianDist = sortedDists[Math.floor(sortedDists.length / 2)] || 0;
+        const ds = inliers.map((i) => centers[i].distanceTo(centroid));
+        const sortedD = ds.slice().sort((a, b) => a - b);
+        const medianD = sortedD[Math.floor(sortedD.length / 2)] || 0;
+        const cutoffD = Math.max(medianD * 3, 1e-3);
 
-      // 3. Cutoff: 4× median, with a small floor for tightly-clustered scenes
-      //    so we don't reject everything when meshes are nearly co-located.
-      const cutoff = Math.max(medianDist * 4, 1e-3);
+        const next = inliers.filter((_, k) => ds[k] <= cutoffD);
+        if (next.length < 3 || next.length === inliers.length) break;
+        inliers = next;
+      }
 
-      // 4. Union bbox of inliers. Fall back to all boxes if rejection
-      //    eliminated too many meshes (defensive — shouldn't normally happen).
+      // STAGE B: extent-outlier rejection on the surviving cluster.
+      const inlierDiags = inliers.map((i) => diags[i]);
+      const sortedDg = inlierDiags.slice().sort((a, b) => a - b);
+      const medianDg = sortedDg[Math.floor(sortedDg.length / 2)] || 0;
+      const cutoffDg = Math.max(medianDg * 20, 1e-3);
+      const afterExtent = inliers.filter((i) => diags[i] <= cutoffDg);
+      if (afterExtent.length >= 3) inliers = afterExtent;
+
+      // Build final box from inliers; fall back to all boxes if filters
+      // were too aggressive (defensive — shouldn't normally happen).
       const box = new THREE.Box3();
-      let kept = 0;
-      for (let i = 0; i < boxes.length; i++) {
-        if (dists[i] <= cutoff) { box.union(boxes[i]); kept++; }
-      }
-      if (kept < 3 || box.isEmpty()) {
-        box.makeEmpty();
-        boxes.forEach((b) => box.union(b));
-      }
+      inliers.forEach((i) => box.union(boxes[i]));
+      if (box.isEmpty()) boxes.forEach((b) => box.union(b));
+
+      // Diag line: lands in the session log as [INFO ] [viewer.js].
+      try {
+        const sz = box.getSize(new THREE.Vector3());
+        const c  = box.getCenter(new THREE.Vector3());
+        const fmt = (n) => Math.abs(n) > 1e4 ? n.toExponential(2) : n.toFixed(2);
+        postHost({
+          type: 'apsDiag',
+          msg: `fit: meshes=${boxes.length} → inliers=${inliers.length} ` +
+               `· box.size=(${fmt(sz.x)},${fmt(sz.y)},${fmt(sz.z)}) ` +
+               `· box.center=(${fmt(c.x)},${fmt(c.y)},${fmt(c.z)})`,
+        });
+      } catch (_) { /* logging must not break fit */ }
+
       return box;
     }
 
