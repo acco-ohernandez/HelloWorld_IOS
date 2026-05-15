@@ -343,7 +343,13 @@
 
     function resizeRenderer() {
       const w = offlineCt.clientWidth, h = offlineCt.clientHeight;
-      renderer.setSize(w, h, false);
+      // updateStyle=true (default): keep CSS width/height in sync with the
+      // drawing-buffer attribute. Passing false caused the canvas to display
+      // at its attribute size (cssPx * devicePixelRatio = 2× container on
+      // retina), overflowing the container. With overflow:hidden on #viewport,
+      // only the top-left quadrant of the rendered scene was visible - making
+      // a correctly-framed model appear in the bottom-right of the visible area.
+      renderer.setSize(w, h);
       const st = getActive();
       if (st && st.camera) { st.camera.aspect = (w || 1) / (h || 1); st.camera.updateProjectionMatrix(); }
     }
