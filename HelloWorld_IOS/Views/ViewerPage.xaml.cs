@@ -159,21 +159,25 @@ public partial class ViewerPage : ContentPage
         var list = results.ToList();
         if (list.Count == 0) return;
 
-        // Split picks into APS (nwd/nwc) and offline. APS is processed
-        // sequentially because each translation is a credit-paying server
-        // job and parallelizing hits APS rate limits anyway. Offline can
-        // be handled with the existing single-tab batch (lead + siblings).
-        var apsFiles    = list.Where(r => IsApsExtension(r.FileName)).ToList();
-        var offlineFiles = list.Where(r => PickedFileImporter.IsModelExtension(r.FileName)).ToList();
+        // Three buckets from the multi-pick:
+        //   APS files (.nwd / .nwc) - each goes through OpenApsFileAsync separately.
+        //   Offline model files - each opens its own tab so multi-pick gives multi-tab.
+        //   Dependency files (.mtl, .bin, textures) - attached to every offline model
+        //     tab so relative refs resolve. Picking the same texture into N tabs is a
+        //     few KB on disk and removes guesswork about which model "owns" it.
+        var apsFiles      = list.Where(r => IsApsExtension(r.FileName)).ToList();
+        var offlineModels = list.Where(r => PickedFileImporter.IsModelExtension(r.FileName)).ToList();
+        var dependencies  = list.Where(r => !IsApsExtension(r.FileName)
+                                         && !PickedFileImporter.IsModelExtension(r.FileName)).ToList();
 
-        if (apsFiles.Count == 0 && offlineFiles.Count == 0)
+        if (apsFiles.Count == 0 && offlineModels.Count == 0)
         {
             _vm.StatusText = "No supported 3D file in selection.";
             return;
         }
 
-        if (offlineFiles.Count > 0)
-            await OpenOfflineBatchAsync(list, offlineFiles[0]);
+        foreach (var model in offlineModels)
+            await OpenOfflineModelAsync(model, dependencies);
 
         foreach (var r in apsFiles)
             await OpenApsFileAsync(r);
@@ -185,31 +189,39 @@ public partial class ViewerPage : ContentPage
         return ext is ".nwd" or ".nwc";
     }
 
-    private async Task OpenOfflineBatchAsync(List<FileResult> all, FileResult lead)
+    private async Task OpenOfflineModelAsync(FileResult model, List<FileResult> dependencies)
     {
-        var tab = _vm.AddOfflineTab(lead.FileName);
+        var tab = _vm.AddOfflineTab(model.FileName);
         _bridge.CreateTab(tab.TabId, ViewModels.TabMode.Offline);
         _bridge.SwitchTab(tab.TabId);
 
         try
         {
-            // Copy lead + sibling files (textures, .mtl, .bin, etc.) into the
-            // same tab folder so relative refs resolve via the nwdviewer-files://
-            // scheme handler. Skip APS files in the batch — those route on
-            // their own.
-            foreach (var r in all)
-            {
-                if (IsApsExtension(r.FileName)) continue;
-                await _importer.ImportAsync(r, tab.TabId);
-            }
+            // Import the model file + any picked dependency files into this tab's
+            // cache folder so relative references (textures, .mtl, .bin) resolve via
+            // the nwdviewer-files:// scheme handler.
+            await _importer.ImportAsync(model, tab.TabId);
+            foreach (var dep in dependencies)
+                await _importer.ImportAsync(dep, tab.TabId);
 
-            var url = _store.BuildUrl(tab.TabId, lead.FileName);
-            var fmt = PickedFileImporter.FormatFromExtension(lead.FileName);
+            var url = _store.BuildUrl(tab.TabId, model.FileName);
+            var fmt = PickedFileImporter.FormatFromExtension(model.FileName);
             _bridge.LoadOffline(tab.TabId, url, fmt);
+            Logger.Info("file.import", $"loaded {model.FileName} into tab {tab.TabId} ({dependencies.Count} deps)");
         }
         catch (Exception ex)
         {
-            _vm.StatusText = $"Import failed: {ex.Message}";
+            _vm.StatusText = $"Import failed for {model.FileName}: {ex.Message}";
+            Logger.Error("file.import", $"failed for {model.FileName}", ex);
+            // Tear the half-built tab back down so the user doesn't see a phantom in
+            // the strip. Best-effort - don't mask the original error.
+            try
+            {
+                _bridge.CloseTab(tab.TabId);
+                _store.Delete(tab.TabId);
+                _vm.CloseTab(tab, reason: "failed-import");
+            }
+            catch { /* ignore secondary failures */ }
         }
     }
 
