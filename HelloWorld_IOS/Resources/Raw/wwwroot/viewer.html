@@ -498,6 +498,7 @@
 
     function applyTheme(theme) {
       if (theme !== 'light' && theme !== 'dark') return;
+      if (currentTheme !== theme) postHost({ type: 'apsDiag', msg: `nav.theme: ${currentTheme} -> ${theme}` });
       currentTheme = theme;
       document.body.classList.toggle('dark', theme === 'dark');
       const tc = THEME_COLORS[theme];
@@ -719,6 +720,11 @@
       if (!box || box.isEmpty()) return;
       const size = new THREE.Vector3();   box.getSize(size);
       const center = new THREE.Vector3(); box.getCenter(center);
+      const isActive = (st === getActive());
+
+      // Snapshot pre-state for diagnostic logging.
+      const posBefore    = st.camera.position.clone();
+      const targetBefore = isActive ? controls.target.clone() : new THREE.Vector3();
 
       const maxDim = Math.max(size.x, size.y, size.z) || 1;
       const fov = st.camera.fov * Math.PI / 180;
@@ -730,21 +736,42 @@
 
       // Keep the current view direction (camera -> target vector, normalized).
       const dir = new THREE.Vector3();
-      if (st === getActive()) dir.subVectors(st.camera.position, controls.target);
-      else                    dir.subVectors(st.camera.position, center);
+      if (isActive) dir.subVectors(st.camera.position, controls.target);
+      else          dir.subVectors(st.camera.position, center);
       if (dir.lengthSq() < 1e-10) dir.set(1, 1, 1);   // fallback to ISO for a degenerate view
       dir.normalize();
 
       st.camera.position.copy(center).addScaledVector(dir, dist);
+      // Explicit lookAt before controls.update() to make camera orientation
+      // deterministic regardless of OrbitControls damping state. update() also
+      // calls lookAt(target), but doing it here covers the one-frame window
+      // between this assignment and the next animate() tick.
+      st.camera.lookAt(center);
       const range = box.getSize(new THREE.Vector3()).length() || 1;
       st.camera.near = Math.max(range / 10000, 0.0001);
       st.camera.far  = Math.max(range * 1000, 100);
       st.camera.updateProjectionMatrix();
 
-      if (st === getActive()) {
+      if (isActive) {
         controls.target.copy(center);
         controls.update();
       }
+
+      // Diag dump: lets us correlate a misframed Fit with what the math saw.
+      try {
+        const fmt = (n) => Math.abs(n) > 1e4 ? n.toExponential(2) : n.toFixed(2);
+        const v   = (v3) => `(${fmt(v3.x)},${fmt(v3.y)},${fmt(v3.z)})`;
+        const cw  = offlineCt.clientWidth, ch = offlineCt.clientHeight;
+        postHost({
+          type: 'apsDiag',
+          msg: `fit.frame: active=${isActive} margin=${margin} dist=${fmt(dist)} ` +
+               `· canvas=${cw}x${ch} aspect=${fmt(aspect)} ` +
+               `· box.size=${v(size)} box.center=${v(center)} ` +
+               `· dir=${v(dir)} ` +
+               `· posBefore=${v(posBefore)} posAfter=${v(st.camera.position)} ` +
+               `· targetBefore=${v(targetBefore)} targetAfter=${v(controls.target)}`,
+        });
+      } catch (_) { /* logging must not break fit */ }
     }
 
     // Fit camera to ALL visible geometry in the current model (falls back to full bounds if nothing visible).
@@ -1208,6 +1235,7 @@
     // ---------- View presets ----------
     function setView(name) {
       const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      postHost({ type: 'apsDiag', msg: `nav.view: ${name}` });
       if (name === 'fit') { fitCamera(st); return; }
 
       // Pure rotation: preserve the current orbit target and the current
@@ -1271,6 +1299,7 @@
 
     function bakeFbx() {
       const st = getActive(); if (!st || st.mode !== 'offline' || !st.loadedObject) return;
+      postHost({ type: 'apsDiag', msg: 'nav.bake: bakeFbx pressed' });
       // Dispose any previous backup — single-level undo.
       if (st.bakeBackup) { disposeTree(st.bakeBackup); st.bakeBackup = null; }
 
@@ -1306,6 +1335,7 @@
 
     function undoBakeFbx() {
       const st = getActive(); if (!st || st.mode !== 'offline' || !st.bakeBackup) return;
+      postHost({ type: 'apsDiag', msg: 'nav.bake: undo pressed' });
       // Remove + dispose current baked root
       st.scene.remove(st.loadedObject);
       disposeTree(st.loadedObject);
@@ -1477,6 +1507,7 @@
     app.style.gridTemplateColumns = expandedCols;
     treeCollapse.addEventListener('click', guard(() => {
       const willCollapse = !app.classList.contains('collapsed');
+      postHost({ type: 'apsDiag', msg: `nav.tree-panel: ${willCollapse ? 'collapse' : 'expand'}` });
       app.classList.toggle('collapsed', willCollapse);
       app.style.gridTemplateColumns = willCollapse ? '28px 1fr' : expandedCols;
       treeCollapse.textContent = willCollapse ? '▶' : '◀';
