@@ -39,11 +39,15 @@ HelloWorld_IOS.sln
     ├── MauiProgram.cs                           # DI registrations + iOS handler binding
     ├── GlobalXmlns.cs                           # XAML namespace defaults (Views/ViewModels/Controls)
     ├── ViewModels/
-    │   ├── MainViewModel.cs                     # observable Tabs + StatusText/Progress; v2-APS seams
+    │   ├── MainViewModel.cs                     # observable Tabs + StatusText/Progress; APS surface live
     │   ├── TabViewModel.cs                      # TabId, Title, FilePath, Properties; APS fields kept
-    │   └── PropertyNode.cs                      # Key/Value/Children — verbatim from upstream
+    │   ├── PropertyNode.cs                      # Key/Value/Children — verbatim from upstream
+    │   ├── SettingsViewModel.cs                 # APS creds form + VerboseNavLogging toggle (Preferences-backed)
+    │   └── DiagnosticsViewModel.cs              # enumerate sessions, share single / export-all-as-zip, delete
     ├── Views/
     │   ├── ViewerPage.xaml(.cs)                 # toolbar / tab strip / WebView / props panel / status
+    │   ├── SettingsPage.xaml(.cs)               # APS creds form + Troubleshooting section (diag link, nav-log toggle)
+    │   └── DiagnosticsPage.xaml(.cs)            # master/detail browser for ~/Library/logs/*.log + iOS share sheet
     ├── Controls/
     │   └── NwdWebView.cs                        # cross-platform façade for WKWebView host
     ├── Converters/
@@ -52,7 +56,10 @@ HelloWorld_IOS.sln
     │   ├── ViewerBridge.cs                      # PostOrQueue + RawMessageReceived parser (mirrors WPF OnViewerMessage)
     │   ├── TabFileStore.cs                      # tabId → CacheDirectory/tabs/{tabId}/ + path-traversal guard
     │   ├── PickedFileImporter.cs                # FilePicker FileResult → tab folder copy
-    │   └── CredentialStore.cs                   # SecureStorage wrapper, v2-APS seam (unused in v1)
+    │   ├── CredentialStore.cs                   # SecureStorage wrapper for APS creds
+    │   ├── SessionLogger.cs                     # per-launch .log file + rolling 50-session retention
+    │   ├── Logger.cs                            # static facade: Info/Warn/Error(category, msg) over SessionLogger
+    │   └── ApsLogBridge.cs                      # forwards NwdViewer.Aps' IApsLogger calls into the host Logger
     ├── Platforms/iOS/
     │   ├── NwdWebViewHandler.cs                 # creates WKWebView with config below
     │   ├── AppSchemeHandler.cs                  # serves nwdviewer-app:// from app bundle wwwroot/
@@ -96,9 +103,10 @@ The bridge protocol matches NwdViewer.Desktop verbatim — same JSON shape, same
 
 **Pending-message queue:** `ViewerBridge` queues outbound messages until JS posts `{ type: "ready" }`, then flushes — same handshake as the WPF `_pendingMessages` queue (`MainWindow.xaml.cs` lines 152-156 in upstream).
 
-**Message types implemented vs. v2 seams:**
-- v1 active: `createTab`, `switchTab`, `closeTab`, `loadOffline`, `setTheme` (outbound); `ready`, `loadStart`, `loadProgress`, `loadEnd`, `loaded`, `selectionOffline`, `jsError` (inbound).
-- v1 routed-but-stubbed (logged via `Debug.WriteLine`): `selection`, `apsDiag`, `imageData`, `error` (inbound). Outbound `loadAps` and `captureImage` have helper methods that aren't called yet. Adding APS in v2 = un-comment these call sites; no protocol changes needed.
+**Message types implemented:**
+- Outbound (host → JS): `createTab`, `switchTab`, `closeTab`, `loadOffline`, `loadAps`, `setTheme`, `captureImage`.
+- Inbound (JS → host): `ready`, `loadStart`, `loadProgress`, `loadEnd`, `loaded`, `selectionOffline`, `selection` (APS), `apsDiag`, `imageData`, `error`, `jsError`.
+- The `apsDiag` channel doubles as the viewer's structured diagnostic stream — fit math (`fit:`, `fit.frame:`), APS viewer lifecycle (`pre-load`, `post-load`), and navigation events (`nav.*`) all flow through it. The host bridge routes them to `Logger.Info("viewer.js", …)` and the `nav.*` subset is gated on the Settings toggle.
 
 ## viewer.html patches
 
@@ -106,15 +114,88 @@ The bridge protocol matches NwdViewer.Desktop verbatim — same JSON shape, same
 
 1. **`chrome.webview` polyfill** (in the early `<script>` block, before `postHost`): defines `window.chrome.webview.postMessage` / `addEventListener` to delegate to `window.HybridWebView` (which the iOS handler injects via a `WKUserScript` at document-start). Lets the rest of `viewer.html` use the WebView2-shaped API unchanged.
 
-2. **OrbitControls touch convention** (after `new OrbitControls(...)` near line 283-ish): `controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }` — 1-finger orbit, 2-finger pinch-zoom + pan. Tap-to-select uses the existing 4-px pointerdown/up movement threshold.
+2. **OrbitControls touch convention** (after `new OrbitControls(...)`): `controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }` — 1-finger **pan**, 2-finger pinch-zoom + orbit. Matches Autodesk Viewer (NWC/NWD) and Navisworks Freedom on iPad. The earlier 1-finger-rotate mapping traced a radial arc around `controls.target` and didn't match the APS feel. Mouse mappings (left=orbit, right=pan, wheel=zoom) are configured separately and unchanged. Tap-to-select still uses the 4-px pointerdown/up movement threshold.
 
-3. **APS CDN lazy-load**: removed the static `<link>` and `<script>` tags pointing at `developer.api.autodesk.com`; introduced `ensureApsSdk()` that injects them on first APS use. v1 never invokes `loadAps`, so the network is never hit. Makes the offline guarantee unconditional.
+3. **APS CDN lazy-load**: removed the static `<link>` and `<script>` tags pointing at `developer.api.autodesk.com`; introduced `ensureApsSdk()` that injects them on first APS use. Keeps the offline path's network-free guarantee.
 
 4. **Render-loop canvas clear** (in the `animate()` function): when there's no active tab or the active tab has no `loadedObject`, render an empty scene with the theme background color so a closed tab doesn't leave its last frame painted on the WebGL canvas.
 
 5. **Selection no longer recenters camera**: removed the `focusOnObject(st, hit.object)` call at the end of the viewport-click handler. Selection only updates the properties panel; double-click still frames the picked object.
 
+6. **Renderer keeps CSS in sync with the drawing buffer** (`resizeRenderer()`): `renderer.setSize(w, h)` — default `updateStyle=true`. Earlier code passed `false`, which left the canvas's CSS dimensions at the attribute size (= cssPx × devicePixelRatio = 2× the container on retina). With `overflow: hidden` on `#viewport`, that hid the bottom-right ¾ of the rendered scene and made a centered Fit appear in the corner. The two `setSize(..., false)` calls inside `captureImage` are intentional — they temporarily upscale the buffer for a higher-res screenshot and immediately restore.
+
+7. **Fit bounding box: two-pass outlier rejection + iterative centroid refinement** (`getVisibleBoundingBox()`):
+   - **Stage A** iteratively recomputes centroid + median distance and drops meshes more than 3× the median away. Up to 3 passes converge the cluster center; catches survey markers / origin references thousands of meters from the building.
+   - **Stage B** rejects any surviving mesh whose bbox diagonal is more than 20× the median diagonal. Catches large "site" / "ground" meshes that sit at the cluster center but span far more space than any single building element (these would otherwise blow up the union bbox and force Fit to zoom way out).
+   - Logs a `fit: meshes=N → inliers=M · box.size=… · box.center=…` diag line on every Fit so we can correlate misframings with what the filter saw.
+
+8. **`frameCameraToBox` explicit `lookAt` + full diag dump**: explicit `camera.lookAt(center)` before `controls.update()` (OrbitControls' update calls lookAt too, but the explicit call covers the one-frame window before the next animate tick — matches what `setView()` already does). Emits a `fit.frame:` line per call with canvas size, aspect, dir, posBefore/posAfter, targetBefore/targetAfter.
+
+9. **Navigation event logging**: button-press handlers emit `apsDiag` messages (`nav.view: …`, `nav.bake: …`, `nav.theme: …`, `nav.tree-panel: …`). Gated host-side by the **Verbose navigation logging** Settings toggle.
+
 Two minor CSS additions for touch (in the `body` rule): `-webkit-touch-callout: none; -webkit-user-select: none;` to suppress iOS magnifier/selection overlays on canvas long-presses.
+
+## Session logging + Diagnostics
+
+A persistent per-app-launch log file landed alongside the APS HTTP instrumentation. The goal: every diagnostic signal — APS calls, viewer events, errors, navigation actions — lives in a file the user can read in-app, share via the iOS share sheet, or export as a zip of the last 50 sessions. Replaces "attach VS and watch Debug Output" for any post-deploy bug.
+
+**Format:** `HH:mm:ss.fff [LEVEL] [category.subcategory] message`
+- Levels: `INFO ` / `WARN ` / `ERROR` (padded to 5 chars).
+- Categories: dotted hierarchy so `grep '\[aps\.'` matches an entire subsystem.
+- Per-launch file at `{FileSystem.AppDataDirectory}/logs/yyyy-MM-dd_HH-mm-ss.log`. Rolling 50-file retention pruned at startup.
+- Secrets (`access_token`, `client_secret`, `Bearer …`) regex-redacted before write.
+
+**Category map:**
+
+| Category | What lands here |
+|---|---|
+| `app.start` | Launch header: build version, device, app data dir, log dir |
+| `app.lifecycle` | `OnStart` / `OnSleep` / `OnResume` |
+| `app.settings` | Non-secret diff when credentials are saved (id prefix, bucket, secretChanged) |
+| `file.pick` | Picker results: name, size, extension |
+| `file.import` | Per-tab import outcome including dep count |
+| `tab.open` / `tab.close` | Tab lifecycle with `reason=user` / `reason=failed-teardown` |
+| `aps.auth` | Token cache hit/miss, scope label, HTTP status + elapsed ms |
+| `aps.bucket` | EnsureBucket: `created` / `already exists (409)` outcomes |
+| `aps.upload` | Per-step signed-S3 init / PUT / complete with bytes + throughput |
+| `aps.translate` | POST `/job` with URN preview, status, elapsed |
+| `aps.manifest` | Polling cycles + status transitions, final poll count |
+| `aps.metadata` / `aps.properties` | Metadata fetch + object-properties fetch |
+| `aps.error` | Full 4xx/5xx response body (always written, even after the modal closes) |
+| `viewer.js` | JS-side diag (`apsDiag:`, `fit:`, `fit.frame:`, `nav.*`) and JS errors |
+| `bridge.error` | C# bridge parse failures |
+
+**Plumbing:**
+
+```
+JS viewer.html ── postHost ──▶ NwdScriptMessageHandler ──▶ ViewerBridge.OnRawMessageReceived
+                                                                     │
+                                                                     ▼
+NwdViewer.Aps clients ── ApsLog.Info(cat, msg) ──▶ IApsLogger (ApsLogBridge) ──▶ Logger.Info
+                                                                                       │
+                                                                                       ▼
+                                                                                SessionLogger
+                                                                                   │
+                                                                                   ▼
+                                                                          .log file (AppDataDirectory)
+                                                                                   │
+                                                                                   ▼
+                                                                      DiagnosticsPage (shareable)
+```
+
+- `NwdViewer.Aps/ApsLog.cs` defines `IApsLogger` + a static `ApsLog` facade. The library never references MAUI — this is the seam. `MauiProgram.CreateMauiApp()` registers `ApsLogBridge` as the sink at startup.
+- `Logger.cs` (iOS app, static) sits in front of the singleton `SessionLogger` so call sites stay terse: `Logger.Info("aps.upload", "…")`. Tees to `Debug.WriteLine` too so it shows up in VS Output when attached.
+- **Verbose nav logging toggle** in Settings (default ON). When OFF, `apsDiag` messages whose body starts with `nav.` are dropped at the bridge. Diagnostic dumps (`fit:`, `fit.frame:`, APS HTTP, app lifecycle, file/tab/settings) are always logged.
+- **DiagnosticsPage** (`Views/DiagnosticsPage.xaml(.cs)` + `ViewModels/DiagnosticsViewModel.cs`) is a master/detail UI: session list on the left, read-only `Editor` (UITextView-backed) on the right for tap-to-select text. Toolbar buttons: **Share** (iOS share sheet via `Share.Default.RequestAsync`), **Export all** (zips the whole `logs/` dir to `CacheDirectory` and shares), **Delete** (per file, active session protected), **Clear all (keep active)**. Auto-selects the newest session on open. Reachable from SettingsPage → Troubleshooting.
+
+## NwdViewer.Aps local patches (beyond error-message surfacing)
+
+A few changes to the shared library that should eventually be upstreamed:
+
+- **`AuthClient` cache is keyed by scope** (was: single `_cached` field). The previous implementation returned the most-recently-fetched token regardless of which scope was requested — once `GetViewerTokenAsync` ran (after a successful translate), every subsequent `GetInternalTokenAsync` call silently reused the viewer-scoped token. Replaced with `Dictionary<string, (TokenResponse, DateTimeOffset)>`. Also instruments cache hit/miss with TTL via `ApsLog.Info("aps.auth", …)`.
+- **`ModelDerivativeClient.StartTranslationAsync(urn, bool forceRetranslate = false, ...)`** — `x-ads-force` is now opt-in. Was unconditionally true, which re-ran APS's policy gate on every retry and burned credits even when a manifest already existed.
+- **HTTP instrumentation**: `AuthClient`, `OssClient`, `ModelDerivativeClient.GetMetadataAsync` / `StartTranslationAsync` / `WaitForTranslationAsync` all wrap their `SendAsync` calls with `Stopwatch` + `ApsLog.Info(…)` for status + elapsed ms. `WaitForTranslationAsync` only logs the first poll + each status transition (not every poll) to keep the log readable for long translates.
+- **`NwdViewer.Aps/ApsLog.cs`** — new file. `IApsLogger` interface + static `ApsLog.SetSink/Info/Warn/Error`. Library stays UI-agnostic.
 
 ## MAUI custom WebView control
 
@@ -141,10 +222,11 @@ If a file's UTI doesn't match (e.g., a Provider extension only exposes `public.i
 ## DI registrations
 
 In `MauiProgram.cs`:
-- Singletons: `MainViewModel`, `CredentialStore`, `TabFileStore`.
-- Transient: `PickedFileImporter`, `ViewerPage`.
-- `AddHttpClient()` is registered even though v1 doesn't make HTTP calls — that's the v2-APS seam so the upstream `NwdViewer.Aps` clients can be dropped in unchanged.
+- Singletons: `SessionLogger`, `MainViewModel`, `CredentialStore`, `TabFileStore`. Plus `Func<ApsCredentials, ApsServices>` factory (per-call construction).
+- Transient: `PickedFileImporter`, `ViewerPage`, `SettingsViewModel`, `SettingsPage`, `DiagnosticsViewModel`, `DiagnosticsPage`.
+- `AddHttpClient()` registered.
 - `ConfigureMauiHandlers` binds `NwdWebView` to `NwdWebViewHandler` only on iOS (`#if IOS`).
+- **After `builder.Build()`**: `Logger.Init(...)` wires the static facade to the resolved `SessionLogger`, and `ApsLog.SetSink(new ApsLogBridge())` connects the library-side log facade to the same sink.
 
 ## APS cloud path (v2 — shipped)
 
@@ -160,7 +242,7 @@ NWD/NWC files route through the **Autodesk Platform Services** cloud-translation
 **Files modified for v2:**
 - `MauiProgram.cs` — DI registration: `Func<ApsCredentials, ApsServices>` factory (singleton), `SettingsViewModel` + `SettingsPage` (transient).
 - `MainViewModel.cs` — APS surface fully un-stubbed. `_aps` cached across calls; `InvalidateApsServices()` called by SettingsPage on Save so updated credentials take effect on the next translation. `MainViewModel` is now `IDisposable`.
-- `Views/ViewerPage.xaml(.cs)` — added gear (⚙) toolbar button between **Properties** and **Theme**. `OpenFilesAsync` splits picks into APS (.nwd / .nwc) and offline streams; APS files run sequentially because translation jobs are credit-paying server work and APS rate-limits parallel calls. **Auto-prompt** for SettingsPage if the user picks an APS file with no credentials saved.
+- `Views/ViewerPage.xaml(.cs)` — added gear (⚙) toolbar button between **Properties** and **Theme**. `OpenFilesAsync` splits picks into three buckets: APS files (`.nwd` / `.nwc`), offline **model files** (`.fbx` / `.obj` / `.gltf` / `.glb` / `.stl` / `.ifc`), and **dependency files** (`.mtl` / `.bin` / textures). Each picked model file opens its own tab — multi-pick gives multi-tab. Dependency files are copied into every offline-model tab so relative refs (`.mtl` textures, `.bin` buffers) resolve via the `nwdviewer-files://` handler. APS files run sequentially because translation jobs are credit-paying server work and APS rate-limits parallel calls. **Auto-prompt** for SettingsPage if the user picks an APS file with no credentials saved. **Failed translate** tears down just that tab (`reason=failed-teardown`) and continues with the next file in the batch.
 - `Services/ViewerBridge.cs` — `selection` case calls `MainViewModel.LoadApsPropertiesAsync`; `apsDiag` and `error` cases now real handlers.
 - `Platforms/iOS/Info.plist` — added `com.accoes.nwd` and `.nwc` to `UTExportedTypeDeclarations` and `LSItemContentTypes` (originally registered as `com.orlandohernandez.*`; renamed when the app moved to the production `com.accoes.nwd3dviewer` Bundle ID on 2026-05-07).
 
@@ -179,11 +261,11 @@ The upstream library uses `EnsureSuccessStatusCode()` which throws an `HttpReque
 
 **Known APS errors, in plain English:**
 - `400 ... Bucket key is invalid` — bucket key violates the format rule above. Open Settings, fix it, Save.
-- `403 ... Token exchange denied. Policy 'ProductAccessRequiresCapacity' has effect: deny` — account-level NWD entitlement gate under the new APS business model. The policy name itself is **not publicly documented** anywhere on Autodesk's docs (verified via web search 2026-05-11) — it's an internal name. Best authoritative explanation, pieced together from APS's own blog posts:
+- `403 ... Token exchange denied. Policy 'ProductAccessRequiresCapacity' has effect: deny` — account-level NWD entitlement gate under the new APS business model. The policy name itself is **not publicly documented** anywhere on Autodesk's docs (verified via web search 2026-05-11) — it's an internal name. **Resolved 2026-05-13:** fresh-filename NWD translation now succeeds for this account (proven via session log: POST `/job` returns 201, manifest poll 1 = `pending`, transitions to `success` after real wall-clock work — see [session log 2026-05-14 19:55-19:59](G:/My%20Drive/!_ios_Testing/APS_Stuff/) capturing `ORH_01.nwd` translating in 56.5s). Autodesk didn't publicly announce a fix; the gate quietly opened sometime between 2026-05-12 and 2026-05-13. Background context preserved below in case the gate ever reappears:
   - **Dec 8, 2025:** APS launched a two-tier (Free + Paid) business model. Model Derivative became one of four "rated" APIs with monthly Free-tier caps. ([APS Business Model Evolution](https://aps.autodesk.com/blog/aps-business-model-evolution))
   - **May 2026:** APS added subscription-tied API access — *"If you have a qualifying Autodesk product subscription, you'll receive monthly API usage included with your subscription."* Exact subscription→API mapping is not in the public docs. ([APS continues to evolve: Data Model APIs included with subscriptions, plus flexible ways to scale](https://aps.autodesk.com/blog/aps-continues-evolve-data-model-apis-included-subscriptions-plus-flexible-ways-scale))
-  - **Empirically verified for our app (2026-05-07 + 2026-05-11):** NWC translates successfully on the same account/app/token; NWD denied; purchasing 300 Flex tokens did not change the response; `/modelderivative/v2/designdata/formats` lists `nwd` as a supported svf2 source.
-  - **Conclusion:** NWD translation now requires a qualifying Autodesk product subscription this account does not currently have. Flex tokens alone don't unlock it. Resolution path: (1) check `manage.autodesk.com → Reporting → Resource and API usage` to see what's entitled, (2) contact APS Support (aps.autodesk.com/support) for the definitive answer on which subscription unlocks NWD. The user-facing alert in `ViewerPage.ClassifyApsError` cites both blog posts and points to APS Support.
+  - **The `ViewerPage.ClassifyApsError` hint text and message-matching are still in place** so if the gate returns we surface the right action (check `manage.autodesk.com → Reporting → Resource and API usage`, contact APS Support).
+  - **Distinguishing cached vs. fresh translation in the log:** APS caches manifests per URN (deterministic from `bucketKey/filename`), so re-uploading the same file returns the existing manifest instantly. To verify a fresh URN is actually translating end-to-end, look for `poll 1 ... status=pending` followed by transitions through `inprogress` to `success`. Poll-1 `status=success` means cache hit.
 - `404` on `/manifest` shortly after `StartTranslation` — APS hasn't begun indexing yet. The `WaitForTranslationAsync` poll loop tolerates this on the first cycle.
 - Translation hangs at `0%` for several minutes on a large NWD — normal; SVF2 translation of complex linked-NWD files is slow.
 
@@ -206,9 +288,10 @@ Fallback when even that doesn't work: `pwsh ./deploy-ipad.ps1` (in the solution 
 
 ## Diagnostics
 
+- **In-app session log** (primary diagnostic surface for post-deploy bugs): Settings → Troubleshooting → **Open diagnostics (session logs)**. Lists the last 50 session files; tap to view, **Share** sends one through the iOS share sheet, **Export all** zips everything to a single `.zip`. See "Session logging + Diagnostics" above for the format and category map. **The full APS 4xx/5xx response body is logged here before the modal closes** — so even if the user dismissed the error dialog, the actionable detail is recoverable.
 - **WebView console:** Safari on the Mac → Develop → Orlando's iPad → 3D Model Viewer. Full DevTools: console, Sources, Network. Web Inspector is enabled on iOS 16.4+ via the KVO `inspectable` flag in `NwdWebViewHandler`.
-- **Bridge errors:** `Debug.WriteLine` output appears in VS's Output → Debug pane while attached.
-- **JS uncaught errors:** routed through `jsError` messages and surface in the status bar.
+- **VS Output (Debug)**: `Logger.Info/Warn/Error` also tee to `Debug.WriteLine`, so every line in the in-app session log also appears in VS's Output → Debug pane while attached. Useful for live tailing during a connected session.
+- **JS uncaught errors:** routed through `jsError` messages → `Logger.Error("viewer.js", …)` and surface in the status bar.
 - **Mac build agent logs:** `~/Library/Logs/Xamarin.Messaging-17.14.271/` on the Mac. The IDB log records `--listdev`/`--listsim` invocations; absence of `--listdev` while the dropdown shows generic "Remote Device" is the broken-enumeration signature.
 
 ## Useful upstream pointers

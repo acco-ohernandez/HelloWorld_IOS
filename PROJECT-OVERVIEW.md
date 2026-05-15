@@ -1,7 +1,7 @@
 # 3D Model Viewer for iPad — Project Notes
 
-**Last updated:** May 7, 2026
-**Status:** v1.0.0 (build 1) live in TestFlight Internal Testing, installed on test iPads
+**Last updated:** May 14, 2026
+**Status:** v1.0.0 (build 2) uploaded via Transporter; csproj already auto-bumped to build 3 for the next upload. NWC translates successfully; NWD entitlement gate cleared on 2026-05-13 — fresh-filename NWD URNs now translate end-to-end (verified by session log). FBX gestures now match the APS feel (1-finger pan, 2-finger orbit+pinch). In-app Diagnostics page exposes the per-session log file for export.
 
 This is the high-level project overview — the "what + why + where we are" doc. For build/deploy mechanics see [CLAUDE-TOOLCHAIN.md](CLAUDE-TOOLCHAIN.md). For app architecture and feature details see [CLAUDE-VIEWER.md](CLAUDE-VIEWER.md).
 
@@ -26,7 +26,9 @@ The trade-off is a more complex toolchain (Windows Visual Studio + Pair-to-Mac +
 - **three.js 0.149 + web-ifc 0.0.44** (vendored offline) — does the actual 3D rendering in JavaScript
 - **Autodesk Platform Services (APS)** — cloud translation for Navisworks files; auth + upload + translate + view
 - **iOS Keychain** (via MAUI `SecureStorage`) — stores APS credentials per-device
-- **GitHub** — source control, branch `Dev_01_Release_Testing` for distribution work
+- **NSUserDefaults** (via MAUI `Preferences`) — stores non-secret toggles (e.g. Verbose navigation logging)
+- **Session-file logger** (`SessionLogger`) — per-launch `.log` file under `AppDataDirectory/logs/`, 50-file rolling retention, secret redaction, surfaced via an in-app DiagnosticsPage with iOS-share-sheet export
+- **GitHub** — source control. `master` is the canonical branch; `Dev_01_Release_Testing` and `Dev_02_NWD_403_Fix` are kept in sync with master post-merge.
 
 ## Build pipeline
 
@@ -79,8 +81,24 @@ Today. Migrated off free-tier signing onto paid Apple Developer Program (Individ
 | App Store Connect record | `NWD Viewer v1` (SKU `nwd3dviewer-2026`) |
 | App ID description | "This is a viewer for 3D models exported from Navis" |
 | First build | `1.0.0 (1)`, ASC ID `6767396471`, uploaded May 7 8:47 PM via Transporter |
+| Second build | `1.0.0 (2)`, uploaded May 12 (auto-bumped by `deploy-appstore.ps1` after the off-center Fit fix and diagnostics work). csproj `<ApplicationVersion>` is now `3` and the script will auto-bump to `4` on the next packaging run. |
 
 **End-to-end verified** — the production-signed build installed on the iPad via TestFlight Internal Testing. Closes the loop on the entire pipeline.
+
+### Phase 2c — Diagnostics, gesture parity, multi-file open (May 11–14, 2026)
+
+Triggered by the NWD 403 investigation, but the infrastructure stands on its own:
+
+- **Structured session log** with three levels (INFO/WARN/ERROR), dotted categories (`aps.upload`, `viewer.js`, `tab.open`, …), per-launch file under `AppDataDirectory/logs/`, 50-file rolling retention, secret redaction. Tees to `Debug.WriteLine` for VS-attached debugging.
+- **DiagnosticsPage** in the app — Settings → Troubleshooting → "Open diagnostics" lists the recent sessions; tap to view, Share to send out via iOS share sheet (AirDrop, Files, Mail, Drive), Export all to zip. Lets the user share a log with a developer without re-attaching VS.
+- **APS HTTP visibility end-to-end**: every `AuthClient` token request (cache hit/miss + scope + TTL), `OssClient` bucket/signed-S3-init/PUT/complete step (with throughput), `ModelDerivativeClient.StartTranslation`/`WaitForTranslation` poll loop (status transitions only — not every poll), metadata fetch — all log status + elapsed ms. A `NwdViewer.Aps/ApsLog.cs` seam keeps the library UI-agnostic; the iOS app registers a sink at startup.
+- **AuthClient scope-cache bug fixed**: tokens are now keyed by scope set. Previously the single `_cached` field returned the most-recent token regardless of scope, so a viewer-scoped token could leak into the next file's translation request.
+- **`x-ads-force` opt-in**: was unconditional; now defaults off. Saves credits and avoids re-triggering APS's policy gate on every retry.
+- **Multi-file open**: each picked offline model gets its own tab. Dependency files (`.mtl`, `.bin`, textures) are copied into every model tab so relative refs still resolve.
+- **Gesture parity with APS viewer**: offline (Three.js OrbitControls) now uses 1-finger pan + 2-finger orbit+pinch, matching the Autodesk Viewer / Navisworks Freedom iPad convention. Was 1-finger rotate / 2-finger pinch+pan.
+- **Fit fix (canvas off-center)**: `renderer.setSize(w, h)` now lets three.js sync CSS dimensions to the drawing buffer. The previous `setSize(w, h, false)` left CSS at the buffer-size attribute (2× the container on retina) — `overflow: hidden` clipped ¾ of the canvas, making centered renders appear in a corner. Single-line fix; one-character bug.
+- **Fit robustness**: bounding-box outlier rejection is now two-pass (iterative center cluster + extent filter) to handle Revit-exported FBXs with large site/origin meshes that drag the bbox center off the visible geometry.
+- **Verbose-nav-logging toggle** in Settings (default ON) gates the `nav.*` event lines so the log can be quieted for normal use while keeping diagnostic dumps.
 
 ## Phase 3 decision still pending
 
@@ -102,7 +120,7 @@ Original plan was **Custom App via Apple Business Manager → Microsoft Intune**
 | Apple Developer Program (Individual) | $99 | Annually |
 | Intel Mac build host | (already owned) | One-time |
 | GitHub repo | $0 | (private repo, free tier OK) |
-| Autodesk APS | Flex tokens + qualifying Autodesk product subscription | Model Derivative is a "rated" API under APS's new two-tier model (Dec 2025). NWC translation: works with Flex tokens on the Free tier (~0.5 tokens per complex job). NWD translation: under the May 2026 update, requires a qualifying Autodesk product subscription tied to the account — Flex tokens alone don't unlock it. Exact subscription requirement isn't publicly documented; contact APS Support to confirm what's needed. See `CLAUDE-VIEWER.md` "Known APS errors" for the full diagnosis. |
+| Autodesk APS | Flex tokens | Model Derivative is a "rated" API under APS's new two-tier model (Dec 2025). NWC and NWD both translate successfully for this account on the post-Dec-2025 + post-May-2026 model. NWD was blocked by an account-level `ProductAccessRequiresCapacity` policy from 2026-05-07 through 2026-05-12; cleared on 2026-05-13 with no announced action from Autodesk's side. See `CLAUDE-VIEWER.md` "Known APS errors" for the preserved context and how to distinguish cached-manifest hits from real fresh translations in the session log. |
 | Microsoft Intune | (existing company tenant) | Already in place |
 | Org upgrade (if pursued later) | $99 | Annually, separate from Individual |
 
@@ -136,9 +154,9 @@ HelloWorld_IOS/
 ## What to do when picking this back up
 
 1. Read `CLAUDE-TOOLCHAIN.md` for build/deploy reference.
-2. Read `CLAUDE-VIEWER.md` for what the app does and how it's structured.
-3. Check current state: `git log --oneline -20` and `git branch -a` on the `Dev_01_Release_Testing` branch.
-4. The first thing to do post-pickup is probably the Phase 3 distribution decision (above). After that, branding swap (replace placeholder `.NET` icon).
+2. Read `CLAUDE-VIEWER.md` for what the app does and how it's structured — note the "Session logging + Diagnostics" section.
+3. Check current state: `git log --oneline -20` on `master` (the canonical branch as of 2026-05-14; Dev_01 and Dev_02 are kept in sync).
+4. The first thing to do post-pickup is the Phase 3 distribution decision (above). After that, branding swap (replace placeholder `.NET` icon).
 
 ## Key external accounts and where they live
 

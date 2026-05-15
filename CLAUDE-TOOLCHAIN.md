@@ -210,12 +210,12 @@ Walks through what's now a working end-to-end pipeline. Reuses Pair-to-Mac for t
 
 ### Per-release procedure
 
-1. **Bump versions in csproj's Release PropertyGroup:**
+1. **Bump versions in csproj's Release PropertyGroup** (or let `deploy-appstore.ps1` auto-bump — see "Auto-bump" below):
    ```xml
    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>  <!-- semantic, what users see -->
-   <ApplicationVersion>2</ApplicationVersion>                     <!-- monotonic, MUST increment per upload -->
+   <ApplicationVersion>3</ApplicationVersion>                     <!-- monotonic, MUST increment per upload -->
    ```
-   App Store Connect rejects re-uploads with the same `ApplicationVersion` under the same `ApplicationDisplayVersion`. Convention: bump `ApplicationVersion` per upload (every fresh build), `ApplicationDisplayVersion` per release.
+   App Store Connect rejects re-uploads with the same `ApplicationVersion` under the same `ApplicationDisplayVersion`. Convention: bump `ApplicationVersion` per upload (every fresh build), `ApplicationDisplayVersion` per release. As of 2026-05-14 the csproj sits at `<ApplicationVersion>3</ApplicationVersion>` (build 1 = TestFlight 2026-05-07; build 2 = uploaded post-Diagnostics + Fit fix on 2026-05-12).
 
 2. **Build Release in VS** (do NOT F5 — see "Don't F5 Release" gotcha below).
    - Switch Configuration → **Release**, target → **net10.0-ios**
@@ -241,7 +241,7 @@ Walks through what's now a working end-to-end pipeline. Reuses Pair-to-Mac for t
    rm -rf "$WORK"
    ```
 
-   Or just run `pwsh ./deploy-appstore.ps1` (this script automates the above end-to-end from Windows via SSH).
+   Or just run `pwsh ./deploy-appstore.ps1` (this script automates the above end-to-end from Windows via SSH, plus auto-bumps csproj `<ApplicationVersion>` for the next build — see "Auto-bump" below).
 
 5. **Upload to App Store Connect** — two options:
    - **Transporter.app** (free, Mac App Store): drag the `.ipa` in, click Deliver. Easiest for a first upload.
@@ -253,6 +253,15 @@ Walks through what's now a working end-to-end pipeline. Reuses Pair-to-Mac for t
      Requires an App Store Connect API key (App Store Connect → Users and Access → Integrations → App Store Connect API). The `.p8` file goes in `~/.appstoreconnect/private_keys/`.
 
 6. **Wait ~10–30 min** for App Store Connect to process the build (it'll appear under TestFlight tab as "Complete" when ready). Then add to an Internal Testing group → tester accepts the email invite (or enters the redemption code in the TestFlight app on iPad) → app installs.
+
+### Auto-bump + drift detection (`deploy-appstore.ps1`)
+
+The script does two things the manual `<ApplicationVersion>` bump used to require by hand:
+
+- **Post-package auto-bump** (default ON, opt out with `-NoBump`). After packaging succeeds, the script reads the current Release-conditional `<ApplicationVersion>` in csproj and rewrites it to current+1. The next VS Release build will embed `CFBundleVersion=N+1`. Bump runs *last* so a failed package/upload doesn't burn a version number. Only the Release PropertyGroup is touched — Debug stays put.
+- **Drift check after locating the `.app`**: the script reads the actual `CFBundleVersion` from the built `.app`'s `Info.plist` via `plutil` and compares to csproj's `<ApplicationVersion>`. If they differ, the user edited csproj after the last VS build — the script warns, names the `.ipa` after the actually-built version (so you can see what you're about to upload), and continues. To rebuild fresh: VS → Build Solution, then re-run.
+
+So the steady-state workflow is just: VS Build → `pwsh ./deploy-appstore.ps1` → drag the `.ipa` to Transporter. The script handles the bump for the next build.
 
 ### Don't F5 Release
 
