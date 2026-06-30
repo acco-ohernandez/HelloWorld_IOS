@@ -28,7 +28,22 @@
       "Bash(cp \"/c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Aps/\"*.cs \"/c/Visual Studio Files/HelloWorld_IOS/NwdViewer.Aps/\")",
       "Bash(cp \"/c/Visual Studio Files/NWC_NWC_Viewer/NwdViewer.Aps/NwdViewer.Aps.csproj\" \"/c/Visual Studio Files/HelloWorld_IOS/NwdViewer.Aps/\")",
       "Bash(dotnet sln *)",
-      "Bash(dotnet add *)"
+      "Bash(dotnet add *)",
+      "Bash(dotnet msbuild *)",
+      "PowerShell($candidates = @\\(\"$env:WINDIR\\\\System32\\\\OpenSSH\\\\ssh.exe\", \"$env:ProgramFiles\\\\OpenSSH\\\\ssh.exe\", \"$env:ProgramFiles\\\\Git\\\\usr\\\\bin\\\\ssh.exe\", \"${env:ProgramFiles\\(x86\\)}\\\\Git\\\\usr\\\\bin\\\\ssh.exe\"\\); $candidates | ForEach-Object { \"$_  -> $\\(Test-Path $_\\)\" }; \"---\"; \\(Get-Command ssh -ErrorAction SilentlyContinue\\).Path)",
+      "PowerShell($Ssh = \"C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\ssh.exe\"; $SshKey = \"$env:USERPROFILE\\\\.ssh\\\\id_ed25519_mac\"; $KnownHosts = \"$env:TEMP\\\\known_hosts_mac\"; & $Ssh -i $SshKey -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$KnownHosts -o LogLevel=ERROR -o PreferredAuthentications=publickey orlandohernandez@192.168.1.139 \"echo hello && ls -la ~/Library/MobileDevice/\")",
+      "Bash(git commit -m ' *)",
+      "WebSearch",
+      "WebFetch(domain:aps.autodesk.com)",
+      "WebFetch(domain:www.autodesk.com)",
+      "Bash(curl -sS -L -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://aps.autodesk.com/en/docs/model-derivative/v2/reference/http/job-POST/\" -o /tmp/job-post.html)",
+      "Read(//tmp/**)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:web.archive.org)",
+      "WebFetch(domain:archive.org)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git checkout *)"
     ]
   }
 }

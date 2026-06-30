@@ -27,6 +27,13 @@ public partial class ViewerPage : ContentPage
         BindingContext = vm;
 
         Viewer.MessageReceived += OnViewerMessage;
+        // Resilience wiring (see CLAUDE-VIEWER "viewer.html patch #10"):
+        //  - On app resume, ask the viewer to verify its WebGL context survived the background.
+        //  - On WebView content-process death, the handler reloads viewer.html; we reset the
+        //    bridge handshake and replay the open tabs into the fresh page.
+        App.Resumed += OnAppResumed;
+        Viewer.WebContentProcessTerminated += OnWebContentProcessTerminated;
+        _bridge.AttachRehydrator(RehydrateTabs);
         // The custom URL scheme is registered on iOS by NwdWebViewHandler.
         // Other TFMs are not supported in v1; the Windows TFM compiles but
         // the WebView won't render content there (the Mac is the deploy target).
@@ -59,6 +66,41 @@ public partial class ViewerPage : ContentPage
     }
 
     private void OnPageSizeChanged(object? sender, EventArgs e) => ApplyOrientationLayout();
+
+    private void OnAppResumed()
+        => Dispatcher.Dispatch(() => _bridge.CheckHealth());
+
+    private void OnWebContentProcessTerminated(object? sender, EventArgs e)
+    {
+        // The handler is already reloading viewer.html. Reset the bridge so messages
+        // re-queue until the fresh page is ready, then re-hydrate the open tabs.
+        Logger.Warn("app.lifecycle", "WebView content process terminated; reloading + re-hydrating tabs");
+        _bridge.PrepareForReload();
+    }
+
+    private void RehydrateTabs()
+    {
+        foreach (var tab in _vm.Tabs)
+        {
+            _bridge.CreateTab(tab.TabId, tab.Mode);
+            if (tab.Mode == ViewModels.TabMode.Aps)
+            {
+                var urn = tab.Urn;
+                var token = tab.Token;
+                if (!string.IsNullOrEmpty(urn) && !string.IsNullOrEmpty(token))
+                    _bridge.LoadAps(tab.TabId, NwdViewer.Aps.OssClient.WithoutPrefix(urn), token);
+            }
+            else
+            {
+                var fileName = Path.GetFileName(tab.FilePath);
+                var url = _store.BuildUrl(tab.TabId, fileName);
+                var fmt = PickedFileImporter.FormatFromExtension(fileName);
+                _bridge.LoadOffline(tab.TabId, url, fmt);
+            }
+        }
+        if (_vm.ActiveTab is not null) _bridge.SwitchTab(_vm.ActiveTab.TabId);
+        Logger.Info("app.lifecycle", $"re-hydrated {_vm.Tabs.Count} tab(s) after WebView reload");
+    }
 
     private void ApplyOrientationLayout()
     {
@@ -281,30 +323,68 @@ public partial class ViewerPage : ContentPage
             }
             catch { /* tab teardown is best-effort; don't mask the original error */ }
 
-            await ShowApsErrorAsync(ex.Message, result.FileName);
+            await ShowFailureAsync(ex, result.FileName);
         }
     }
 
     /// <summary>
-    /// APS errors carry their actionable detail inside the response body
-    /// (see the EnsureSuccessOrThrowAsync helper in NwdViewer.Aps/OssClient.cs +
-    /// AuthClient.cs). The status bar truncates them; pop a modal so the user
-    /// can read the full message and translate the policy name into a fix.
+    /// Surfaces a failed APS open to the user, classifying it first so a client-side network
+    /// timeout (which happens before APS ever sees the file) isn't mislabeled as an "APS error".
+    /// APS errors carry their actionable detail inside the response body (see EnsureSuccessOrThrowAsync
+    /// in NwdViewer.Aps/OssClient.cs + AuthClient.cs); the status bar truncates them, so we pop a
+    /// modal with the full message and a fix hint.
     /// </summary>
-    private async Task ShowApsErrorAsync(string fullMessage, string filename)
+    private async Task ShowFailureAsync(Exception ex, string filename)
     {
-        // Persist the full body before the modal eats it — Diagnostics page reads this back.
-        Logger.Error("aps.error", $"file={filename}\n{fullMessage}");
+        var (category, title, hint) = ClassifyFailure(ex);
+        var fullMessage = ex.Message;
 
-        // Status bar gets a short summary. Full message goes to the alert.
-        _vm.StatusText = $"APS error opening {filename} (tap for details).";
+        // Persist the full detail under the right category before the modal eats it —
+        // the Diagnostics page reads this back. Network timeouts log under net.error, not aps.error.
+        Logger.Error(category, $"file={filename}\n{fullMessage}");
 
-        var hint = ClassifyApsError(fullMessage);
+        _vm.StatusText = $"{title} opening {filename} (tap for details).";
+
+        // For genuine APS HTTP errors, fall back to the detailed policy/bucket hints.
+        hint ??= ClassifyApsError(fullMessage);
         var alertBody = string.IsNullOrWhiteSpace(hint)
             ? fullMessage
-            : $"{hint}\n\n— Full APS response —\n{fullMessage}";
-        try { await DisplayAlertAsync("APS error", alertBody, "OK"); }
+            : $"{hint}\n\n— Details —\n{fullMessage}";
+        try { await DisplayAlertAsync(title, alertBody, "OK"); }
         catch { /* if no MainPage yet (shouldn't happen here), fall back to status bar */ }
+    }
+
+    /// <summary>
+    /// Splits a failed-open exception into network vs. still-translating vs. APS classes so the
+    /// dialog title, log category, and hint match the real cause. Network transport failures and
+    /// our own ApsHttp timeouts surface as TimeoutException / a typed HttpRequestException error;
+    /// APS-origin failures are manually-built HttpRequestExceptions (HttpRequestError.Unknown) whose
+    /// body is decoded by ClassifyApsError.
+    /// </summary>
+    private static (string category, string title, string? hint) ClassifyFailure(Exception ex)
+    {
+        switch (ex)
+        {
+            case TimeoutException:
+                return ("net.error", "Network problem",
+                    "The request to APS timed out before it finished. For a large model this usually " +
+                    "means the connection is too slow or dropped mid-transfer — try again on Wi-Fi.");
+
+            case NwdViewer.Aps.TranslationTimeoutException:
+                return ("aps.translate", "Still processing",
+                    "APS is still translating this model and didn't finish within the wait window. " +
+                    "Large federated models can take a while — reopen the file in a few minutes; the " +
+                    "already-uploaded copy will be reused, so it won't upload or re-translate from scratch.");
+
+            case HttpRequestException hre when hre.HttpRequestError != HttpRequestError.Unknown:
+                // A real transport-layer failure (DNS, connection refused, TLS) — not an APS reply.
+                return ("net.error", "Network problem",
+                    $"Couldn't reach APS ({hre.HttpRequestError}). Check the network connection and try again.");
+
+            default:
+                // APS-origin HTTP error (status + body) or anything else — let ClassifyApsError decode it.
+                return ("aps.error", "APS error", null);
+        }
     }
 
     private static string? ClassifyApsError(string body)

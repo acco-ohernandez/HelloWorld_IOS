@@ -12,6 +12,8 @@ public sealed class ViewerBridge
     private readonly Queue<string> _pendingMessages = new();
     private bool _jsReady;
     private Action<string>? _send;
+    private Action? _rehydrate;
+    private bool _rehydratePending;
 
     public ViewerBridge(MainViewModel vm)
     {
@@ -21,6 +23,24 @@ public sealed class ViewerBridge
     // Wire the host->JS sender. ViewerPage calls this after HybridWebView is
     // constructed: `bridge.AttachSender(json => webView.SendRawMessage(json));`
     public void AttachSender(Action<string> send) => _send = send;
+
+    // Wire a one-shot re-hydrate callback that replays the current tabs into a freshly
+    // reloaded viewer.html (after a WebView content-process crash). Invoked on the next 'ready'.
+    public void AttachRehydrator(Action rehydrate) => _rehydrate = rehydrate;
+
+    /// <summary>
+    /// Call before reloading viewer.html (e.g. after a WebView content-process crash):
+    /// resets the ready handshake so outbound messages re-queue until the fresh page posts
+    /// 'ready', and arms a one-shot re-hydrate to replay the current tabs into the new JS world.
+    /// </summary>
+    public void PrepareForReload()
+    {
+        _jsReady = false;
+        _rehydratePending = true;
+    }
+
+    // Ask the viewer to verify its WebGL context survived a background (called on app resume).
+    public void CheckHealth() => PostOrQueue(new { type = "checkHealth" });
 
     public void PostOrQueue(object payload)
     {
@@ -76,6 +96,13 @@ public sealed class ViewerBridge
                     if (_send is not null)
                     {
                         while (_pendingMessages.Count > 0) _send(_pendingMessages.Dequeue());
+                    }
+                    // A re-ready after a content-process crash: replay the live tabs into
+                    // the fresh JS world so the user's open models come back.
+                    if (_rehydratePending)
+                    {
+                        _rehydratePending = false;
+                        _rehydrate?.Invoke();
                     }
                     break;
 
@@ -140,6 +167,20 @@ public sealed class ViewerBridge
                     if (diagMsg.StartsWith("nav.", StringComparison.Ordinal) && !Logger.VerboseNavLogging)
                         break;
                     Logger.Info("viewer.js", $"apsDiag: {diagMsg}");
+                    break;
+                }
+
+                case "webglEvent":
+                {
+                    // WebGL context lifecycle from viewer.html (lost on background GPU reclaim,
+                    // restored when the context comes back, reinit after a forced re-create).
+                    // Logged so the disappearing-model symptom is diagnosable from the session
+                    // log directly instead of inferred from app.lifecycle churn.
+                    var evt = GetStringOrNull(doc.RootElement, "event") ?? "?";
+                    var detail = GetStringOrNull(doc.RootElement, "detail");
+                    var line = detail is null ? $"context {evt}" : $"context {evt}: {detail}";
+                    if (evt == "lost") Logger.Warn("viewer.webgl", line);
+                    else Logger.Info("viewer.webgl", line);
                     break;
                 }
 

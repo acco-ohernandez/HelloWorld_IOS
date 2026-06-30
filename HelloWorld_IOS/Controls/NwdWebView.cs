@@ -19,6 +19,11 @@ public class NwdWebView : View
 
     public event EventHandler<string>? MessageReceived;
 
+    // Raised when iOS jettisons the WKWebView's web content process (memory pressure
+    // while backgrounded). The page is blank and all JS state is gone; the host resets
+    // the bridge handshake and re-hydrates tabs after the page reloads.
+    public event EventHandler? WebContentProcessTerminated;
+
     // Populated by the platform handler once the WKWebView is alive. Returns
     // false if the platform view hasn't been constructed yet (rare; usually
     // ViewerPage waits for Loaded before sending).
@@ -28,4 +33,7 @@ public class NwdWebView : View
 
     internal void RaiseMessageReceived(string json)
         => MessageReceived?.Invoke(this, json);
+
+    internal void RaiseWebContentProcessTerminated()
+        => WebContentProcessTerminated?.Invoke(this, EventArgs.Empty);
 }

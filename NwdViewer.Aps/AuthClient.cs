@@ -58,7 +58,7 @@ public sealed class AuthClient
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
 
             var sw = Stopwatch.StartNew();
-            using var resp = await _http.SendAsync(req, ct);
+            using var resp = await ApsHttp.SendAsync(_http, req, ApsHttp.ShortCallTimeout, "APS auth token", ct);
             sw.Stop();
 
             if (!resp.IsSuccessStatusCode)

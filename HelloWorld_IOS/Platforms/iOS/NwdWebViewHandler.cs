@@ -23,6 +23,7 @@ public class NwdWebViewHandler : ViewHandler<NwdWebView, WKWebView>
     public NwdWebViewHandler() : base(PropertyMapper) { }
 
     private NwdScriptMessageHandler? _scriptHandler;
+    private NavDelegate? _navDelegate;
 
     protected override WKWebView CreatePlatformView()
     {
@@ -50,6 +51,11 @@ public class NwdWebViewHandler : ViewHandler<NwdWebView, WKWebView>
         config.UserContentController.AddUserScript(bridgeScript);
 
         var webView = new WKWebView(CGRect.Empty, config);
+
+        // Recover from web-content-process termination (iOS jettisons it under memory
+        // pressure while backgrounded — the page goes blank and JS state is lost).
+        _navDelegate = new NavDelegate(this);
+        webView.NavigationDelegate = _navDelegate;
 
         // For dev: enable WKWebView's web inspector if SDK supports it (iOS 16.4+).
         try { webView.SetValueForKey(NSObject.FromObject(true), (NSString)"inspectable"); }
@@ -109,6 +115,25 @@ public class NwdWebViewHandler : ViewHandler<NwdWebView, WKWebView>
         if (nsUrl is null) return;
         var request = new NSUrlRequest(nsUrl);
         webView.LoadRequest(request);
+    }
+
+    // WKNavigationDelegate that catches the web content process being killed and
+    // reloads viewer.html. The control event lets the host reset its ready handshake
+    // and arm a re-hydrate so the current tabs replay into the fresh JS world.
+    private sealed class NavDelegate : WKNavigationDelegate
+    {
+        private readonly NwdWebViewHandler _handler;
+        public NavDelegate(NwdWebViewHandler handler) => _handler = handler;
+
+        public override void WebViewWebContentProcessDidTerminate(WKWebView webView)
+        {
+            // Fire first (synchronously) so the bridge re-queues + arms re-hydrate
+            // before the reloaded page posts 'ready'.
+            _handler.VirtualView?.RaiseWebContentProcessTerminated();
+            var source = _handler.VirtualView?.Source;
+            if (!string.IsNullOrEmpty(source))
+                NavigateTo(webView, source!);
+        }
     }
 
     // Bridge shim: viewer.html already has a JS-side polyfill that handles

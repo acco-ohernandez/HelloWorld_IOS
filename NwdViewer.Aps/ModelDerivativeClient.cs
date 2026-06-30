@@ -33,7 +33,9 @@ public sealed class ModelDerivativeClient
                 {
                     formats = new[]
                     {
-                        new { type = "svf2", views = new[] { "2d", "3d" } }
+                        // 3d only: this is a 3D model viewer with no 2d-sheet UI, so requesting
+                        // "2d" only made translation heavier/slower for no benefit.
+                        new { type = "svf2", views = new[] { "3d" } }
                     }
                 }
             })
@@ -44,7 +46,7 @@ public sealed class ModelDerivativeClient
 
         ApsLog.Info("aps.translate", $"POST job force={forceRetranslate} urn={UrnPreview(jobUrn)}");
         var sw = Stopwatch.StartNew();
-        using var resp = await _http.SendAsync(req, ct);
+        using var resp = await ApsHttp.SendAsync(_http, req, ApsHttp.ShortCallTimeout, "APS translation job POST", ct);
         sw.Stop();
         if (!resp.IsSuccessStatusCode)
         {
@@ -63,7 +65,7 @@ public sealed class ModelDerivativeClient
             $"{_options.BaseUrl}/modelderivative/v2/designdata/{Uri.EscapeDataString(OssClient.WithoutPrefix(urn))}/manifest");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        using var resp = await _http.SendAsync(req, ct);
+        using var resp = await ApsHttp.SendAsync(_http, req, ApsHttp.ShortCallTimeout, "APS manifest GET", ct);
         if (!resp.IsSuccessStatusCode)
         {
             var body = await resp.Content.ReadAsStringAsync(ct);
@@ -82,20 +84,48 @@ public sealed class ModelDerivativeClient
         var pollSw = Stopwatch.StartNew();
         var poll = 0;
         string? lastStatus = null;
+
+        // Exponential backoff between polls: start tight so a cache hit / fast translate is snappy,
+        // then ease off so a 40-min federated-NWD translate doesn't fire ~600 polls (and ~600
+        // matching auth cache-hit log lines) like the old fixed 4 s interval did.
+        var delay = MinPollDelay;
+        // Tolerate a few consecutive transient manifest failures (a flaky-link timeout or 5xx)
+        // mid-translate instead of aborting a translation that is still running server-side.
+        var consecutiveErrors = 0;
+
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+            if (pollSw.Elapsed > MaxTranslationWait)
+            {
+                ApsLog.Error("aps.manifest", $"translation still '{lastStatus ?? "unknown"}' after {pollSw.Elapsed.TotalMinutes:F0} min ({poll} polls); giving up");
+                throw new TranslationTimeoutException(
+                    $"APS translation did not finish within {MaxTranslationWait.TotalMinutes:F0} minutes (last status: {lastStatus ?? "unknown"}).");
+            }
             poll++;
             TranslationManifest manifest;
             try
             {
                 manifest = await GetManifestAsync(urn, ct);
+                consecutiveErrors = 0;
             }
             catch (HttpRequestException ex) when (poll == 1 && ex.Message.Contains("404"))
             {
                 // APS hasn't begun indexing on the very first poll; tolerated.
                 ApsLog.Warn("aps.manifest", $"poll {poll} returned 404 (translation not yet indexed; will retry)");
-                await Task.Delay(TimeSpan.FromSeconds(4), ct);
+                await DelayAndBackoff();
+                continue;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TimeoutException && !ct.IsCancellationRequested)
+            {
+                consecutiveErrors++;
+                if (consecutiveErrors >= MaxConsecutivePollErrors)
+                {
+                    ApsLog.Error("aps.manifest", $"poll {poll} failed {consecutiveErrors}x consecutively; giving up ({ex.GetType().Name}: {ex.Message})");
+                    throw;
+                }
+                ApsLog.Warn("aps.manifest", $"poll {poll} transient error ({ex.GetType().Name}); retry {consecutiveErrors}/{MaxConsecutivePollErrors}");
+                await DelayAndBackoff();
                 continue;
             }
 
@@ -120,9 +150,23 @@ public sealed class ModelDerivativeClient
                     throw new InvalidOperationException($"APS translation {manifest.Status} for urn {urn}.");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(4), ct);
+            await DelayAndBackoff();
+        }
+
+        async Task DelayAndBackoff()
+        {
+            await Task.Delay(delay, ct);
+            var next = delay.TotalSeconds * PollBackoffFactor;
+            delay = TimeSpan.FromSeconds(Math.Min(next, MaxPollDelay.TotalSeconds));
         }
     }
+
+    private static readonly TimeSpan MinPollDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan MaxPollDelay = TimeSpan.FromSeconds(15);
+    private const double PollBackoffFactor = 1.5;
+    // Generous cap: the reference 476 MB federated NWD took ~44 min, so 120 min leaves headroom.
+    private static readonly TimeSpan MaxTranslationWait = TimeSpan.FromMinutes(120);
+    private const int MaxConsecutivePollErrors = 5;
 
     public async Task<List<MetadataEntry>> GetMetadataAsync(string urn, CancellationToken ct = default)
     {
@@ -132,7 +176,7 @@ public sealed class ModelDerivativeClient
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var sw = Stopwatch.StartNew();
-        using var resp = await _http.SendAsync(req, ct);
+        using var resp = await ApsHttp.SendAsync(_http, req, ApsHttp.ShortCallTimeout, "APS metadata GET", ct);
         sw.Stop();
         if (!resp.IsSuccessStatusCode)
         {
@@ -160,7 +204,7 @@ public sealed class ModelDerivativeClient
             $"{_options.BaseUrl}/modelderivative/v2/designdata/{Uri.EscapeDataString(OssClient.WithoutPrefix(urn))}/metadata/{Uri.EscapeDataString(modelGuid)}/properties?objectid={objectId}");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        using var resp = await _http.SendAsync(req, ct);
+        using var resp = await ApsHttp.SendAsync(_http, req, ApsHttp.ShortCallTimeout, "APS properties GET", ct);
         var body = await resp.Content.ReadAsStringAsync(ct);
         if (!resp.IsSuccessStatusCode)
             throw new HttpRequestException($"APS properties GET failed: {(int)resp.StatusCode} {resp.ReasonPhrase}. Body: {body}");

@@ -133,6 +133,8 @@ The bridge protocol matches NwdViewer.Desktop verbatim — same JSON shape, same
 
 9. **Navigation event logging**: button-press handlers emit `apsDiag` messages (`nav.view: …`, `nav.bake: …`, `nav.theme: …`, `nav.tree-panel: …`). Gated host-side by the **Verbose navigation logging** Settings toggle.
 
+10. **WebGL context-loss recovery**: iOS reclaims the GPU when the app is backgrounded; the canvas previously came back blank ("Open a model to begin") on resume and never recovered. Now both the shared three.js `renderer.domElement` **and** the APS Viewer's own canvas have `webglcontextlost`/`webglcontextrestored` listeners. On loss: `preventDefault()` (required so the browser will re-fire `restored`), set a `contextLost` flag, and the `animate()` loop early-returns to stop drawing into a dead context. On restore: re-apply renderer state (`setPixelRatio`, `localClippingEnabled`, `resizeRenderer`) and replay the active model — offline tabs remember their source via `st.lastUrl`/`st.lastFormat`, APS tabs re-run `loadApsTab(tabId, urn, token)`. A host-posted `checkHealth` message (sent on app resume, via `App.Resumed` → `ViewerBridge.CheckHealth`) is the backstop: if the context is lost but the browser didn't auto-fire `restored`, it calls `renderer.forceContextRestore()` and nudges the APS viewer with `resize()` + `invalidate()`. All transitions emit a `webglEvent` message logged under the `viewer.webgl` category. A full web-content-process termination (memory pressure) is caught separately by a `WKNavigationDelegate.WebViewWebContentProcessDidTerminate` in `NwdWebViewHandler` → reload viewer.html + `ViewerBridge.PrepareForReload()` (resets the `ready` handshake) + a one-shot re-hydrate that replays the open tabs (`ViewerPage.RehydrateTabs`).
+
 Two minor CSS additions for touch (in the `body` rule): `-webkit-touch-callout: none; -webkit-user-select: none;` to suppress iOS magnifier/selection overlays on canvas long-presses.
 
 ## Session logging + Diagnostics
@@ -163,6 +165,8 @@ A persistent per-app-launch log file landed alongside the APS HTTP instrumentati
 | `aps.metadata` / `aps.properties` | Metadata fetch + object-properties fetch |
 | `aps.error` | Full 4xx/5xx response body (always written, even after the modal closes) |
 | `viewer.js` | JS-side diag (`apsDiag:`, `fit:`, `fit.frame:`, `nav.*`) and JS errors |
+| `viewer.webgl` | WebGL context lifecycle: `context lost` / `restored` / `reinit` for the three.js and APS canvases (see viewer.html patch #10) |
+| `net.error` | Client-side network failures classified apart from APS errors — a timeout (`ApsHttp` TimeoutException) or transport failure before/independent of an APS reply (see `ViewerPage.ClassifyFailure`) |
 | `bridge.error` | C# bridge parse failures |
 
 **Plumbing:**
@@ -277,6 +281,7 @@ The upstream library uses `EnsureSuccessStatusCode()` which throws an `HttpReque
 - **iPhone layout polish.** Page reflows but isn't tuned.
 - **Cancel running translation.** Upstream WPF doesn't offer it either; not blocking.
 - **APS multi-file batch with "continue with remaining?" prompt.** Current behavior is sequential best-effort; per-file failure aborts that file but the next file proceeds.
+- **Off-device pre-translate pipeline** and **native SceneKit/RealityKit render fork** — the two large initiatives from the 2026-06-24 large-model investigation. Designed but not built; see [docs/ARCHITECTURE-SPIKES.md](docs/ARCHITECTURE-SPIKES.md).
 
 ## Deploying
 

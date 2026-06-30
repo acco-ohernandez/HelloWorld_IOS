@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using HelloWorld_IOS.Services;
 using NwdViewer.Aps;
@@ -14,8 +15,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private string statusText = "Ready.";
     [ObservableProperty] private int progressPercent;
-    [ObservableProperty] private bool isBusy;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDeterminateProgress))]
+    private bool isBusy;
+
+    // True only during the APS translate-poll phase, where APS reports progress=0% for almost
+    // the whole job — so a determinate bar looks frozen. The UI swaps to an indeterminate
+    // ActivityIndicator + an elapsed-time status line instead.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDeterminateProgress))]
+    private bool isTranslating;
+
     [ObservableProperty] private TabViewModel? activeTab;
+
+    /// <summary>Show the determinate progress bar only when busy but NOT mid-translate.</summary>
+    public bool ShowDeterminateProgress => IsBusy && !IsTranslating;
 
     public ObservableCollection<TabViewModel> Tabs { get; } = [];
 
@@ -130,9 +145,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ProgressPercent = 0;
             await aps.ModelDerivative.StartTranslationAsync(urn, ct: ct);
 
-            StatusText = "Translating (can take several minutes for large files)...";
+            StatusText = "Translating… this can take several minutes for large models.";
+            IsTranslating = true;
+            var translateSw = Stopwatch.StartNew();
             await aps.ModelDerivative.WaitForTranslationAsync(urn,
-                new Progress<int>(p => ProgressPercent = p), ct);
+                new Progress<int>(p =>
+                {
+                    // APS reports 0% for most of the job, so lead with elapsed time (which always
+                    // advances) and append the percent only once it becomes meaningful.
+                    var e = translateSw.Elapsed;
+                    var pctText = p > 0 ? $" ({p}%)" : "";
+                    StatusText = $"Translating… {(int)e.TotalMinutes:00}:{e.Seconds:00} elapsed{pctText}";
+                }), ct);
+            IsTranslating = false;
 
             var metadata = await aps.ModelDerivative.GetMetadataAsync(urn, ct);
             var primary = metadata.FirstOrDefault(m => m.Role == "3d") ?? metadata.FirstOrDefault();
@@ -147,6 +172,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         finally
         {
             IsBusy = false;
+            IsTranslating = false;
         }
     }
 

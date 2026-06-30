@@ -341,6 +341,38 @@
     // Tap-to-select uses the pointerdown/up movement-threshold check elsewhere.
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
+    // ---------- WebGL context-loss recovery ----------
+    // iOS reclaims the GPU when the app is backgrounded. Without this, the canvas
+    // comes back blank ("Open a model to begin") on resume and never recovers,
+    // because the render loop keeps calling a dead context with no error. We pause
+    // rendering on loss and re-load the active model once the context is restored.
+    let contextLost = false;
+    function reloadActiveTab(reason) {
+      const st = getActive();
+      if (!st) return;
+      if (st.mode === 'offline') {
+        if (st.lastUrl) loadOfflineFile(st, st.lastUrl, st.lastFormat);
+      } else if (st.urn && st.token) {
+        loadApsTab(st.tabId, st.urn, st.token);
+      }
+      postHost({ type: 'apsDiag', msg: `webgl reload active tab (${reason})` });
+    }
+    renderer.domElement.addEventListener('webglcontextlost', guard((e) => {
+      // preventDefault is REQUIRED for the browser to later fire 'webglcontextrestored'.
+      e.preventDefault();
+      contextLost = true;
+      postHost({ type: 'webglEvent', event: 'lost', detail: 'three.js canvas' });
+    }, 'webgl-lost'));
+    renderer.domElement.addEventListener('webglcontextrestored', guard(() => {
+      contextLost = false;
+      // Renderer state tied to the GL context is gone — re-apply it, then re-draw.
+      renderer.setPixelRatio(devicePixelRatio);
+      renderer.localClippingEnabled = true;
+      resizeRenderer();
+      postHost({ type: 'webglEvent', event: 'restored', detail: 'three.js canvas' });
+      reloadActiveTab('context restored');
+    }, 'webgl-restored'));
+
     function resizeRenderer() {
       const w = offlineCt.clientWidth, h = offlineCt.clientHeight;
       // updateStyle=true (default): keep CSS width/height in sync with the
@@ -457,6 +489,8 @@
           this.clipRange    = { min: -10, max: 10 };
           this.cameraState  = null;
           this.measure      = { active: false, points: [], group: null };
+          this.lastUrl      = null;   // last loaded source URL + format, for WebGL-context-restore replay
+          this.lastFormat   = null;
         } else {
           // APS
           this.urn = null; this.token = null;
@@ -572,6 +606,24 @@
                 postHost({ type: 'selection', tabId: currentApsTabId, dbId });
               }
             });
+            // The APS viewer owns its own canvas / GL context, separate from three.js,
+            // so the renderer.domElement listeners above don't cover it. Wire recovery
+            // here: on restore, reload the current APS model from its saved urn/token.
+            try {
+              const apsCanvas = apsViewer.canvas || apsCt.querySelector('canvas');
+              if (apsCanvas && !apsCanvas.__ctxHandlersWired) {
+                apsCanvas.__ctxHandlersWired = true;
+                apsCanvas.addEventListener('webglcontextlost', guard((e) => {
+                  e.preventDefault();
+                  postHost({ type: 'webglEvent', event: 'lost', detail: 'aps canvas' });
+                }, 'aps-webgl-lost'));
+                apsCanvas.addEventListener('webglcontextrestored', guard(() => {
+                  postHost({ type: 'webglEvent', event: 'restored', detail: 'aps canvas' });
+                  const st = getActive();
+                  if (st && st.mode === 'aps' && st.urn && st.token) loadApsTab(st.tabId, st.urn, st.token);
+                }, 'aps-webgl-restored'));
+              }
+            } catch (_) {}
           }
           cb();
         });
@@ -868,6 +920,7 @@
     }
 
     function loadOfflineFile(st, url, format) {
+      st.lastUrl = url; st.lastFormat = format;   // remembered so a WebGL-context restore can replay the load
       placeholder.style.display = 'none';
       setStatus('Loading ' + format.toUpperCase() + '...');
       postHost({ type: 'loadStart', tabId: st.tabId, format });
@@ -974,6 +1027,8 @@
 
     (function animate() {
       requestAnimationFrame(animate);
+      // GPU context gone (app backgrounded) — skip drawing until 'webglcontextrestored'.
+      if (contextLost) return;
       try {
         const st = getActive();
         if (!st || st.mode !== 'offline' || !st.loadedObject) {
@@ -1567,6 +1622,23 @@
         case 'setTheme':
           applyTheme(msg.theme);
           break;
+        case 'checkHealth': {
+          // Host posts this on app resume. If the GPU context died while backgrounded
+          // and the browser didn't auto-fire 'webglcontextrestored', force a restore;
+          // also nudge the APS viewer (its own canvas/context) to redraw.
+          try {
+            const gl = renderer.getContext();
+            if (contextLost || (gl && gl.isContextLost && gl.isContextLost())) {
+              postHost({ type: 'webglEvent', event: 'reinit', detail: 'forceContextRestore on resume' });
+              try { renderer.forceContextRestore(); } catch (_) {}
+            }
+          } catch (_) {}
+          const st = getActive();
+          if (st && st.mode === 'aps' && apsViewer) {
+            try { apsViewer.resize(); apsViewer.impl?.invalidate?.(true, true, true); } catch (_) {}
+          }
+          break;
+        }
         case 'captureImage': {
           const st = getActive();
           const fmt = msg.format || 'image/png';
