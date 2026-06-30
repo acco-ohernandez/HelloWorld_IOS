@@ -125,7 +125,8 @@ public class NwdWebViewHandler : ViewHandler<NwdWebView, WKWebView>
         private readonly NwdWebViewHandler _handler;
         public NavDelegate(NwdWebViewHandler handler) => _handler = handler;
 
-        public override void WebViewWebContentProcessDidTerminate(WKWebView webView)
+        // Bound from the ObjC selector webViewWebContentProcessDidTerminate:
+        public override void ContentProcessDidTerminate(WKWebView webView)
         {
             // Fire first (synchronously) so the bridge re-queues + arms re-hydrate
             // before the reloaded page posts 'ready'.

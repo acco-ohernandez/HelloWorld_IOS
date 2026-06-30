@@ -98,7 +98,7 @@ Triggered by the NWD 403 investigation, but the infrastructure stands on its own
 - **Gesture parity with APS viewer**: offline (Three.js OrbitControls) now uses 1-finger pan + 2-finger orbit+pinch, matching the Autodesk Viewer / Navisworks Freedom iPad convention. Was 1-finger rotate / 2-finger pinch+pan.
 - **Fit fix (canvas off-center)**: `renderer.setSize(w, h)` now lets three.js sync CSS dimensions to the drawing buffer. The previous `setSize(w, h, false)` left CSS at the buffer-size attribute (2× the container on retina) — `overflow: hidden` clipped ¾ of the canvas, making centered renders appear in a corner. Single-line fix; one-character bug.
 - **Fit robustness**: bounding-box outlier rejection is now two-pass (iterative center cluster + extent filter) to handle Revit-exported FBXs with large site/origin meshes that drag the bbox center off the visible geometry.
-- **Verbose-nav-logging toggle** in Settings (default ON) gates the `nav.*` event lines so the log can be quieted for normal use while keeping diagnostic dumps.
+- **Verbose-nav-logging toggle** in Settings (default OFF) gates the `nav.*` event lines so the log stays quiet for normal use while keeping diagnostic dumps; turn it on when you need button/nav tracing.
 
 ## Phase 3 decision still pending
 

@@ -46,6 +46,7 @@ public sealed class SessionLogger : IDisposable
 
             // Build-identity header: lets you correlate a log with the .ipa that produced it.
             Info("app.start", $"NwdViewer v{AppInfo.Current.VersionString} build {AppInfo.Current.BuildString}");
+            Info("app.start", $"Built: {BuildInfo.Timestamp}");
             Info("app.start", $"Device: {DeviceInfo.Manufacturer} {DeviceInfo.Model} · {DeviceInfo.Platform} {DeviceInfo.VersionString} · {DeviceInfo.Idiom}");
             Info("app.start", $"App data: {FileSystem.AppDataDirectory}");
             Info("app.start", $"Log dir:  {LogDirectory}");

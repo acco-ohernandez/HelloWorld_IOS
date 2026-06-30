@@ -189,7 +189,7 @@ NwdViewer.Aps clients ── ApsLog.Info(cat, msg) ──▶ IApsLogger (ApsLogB
 
 - `NwdViewer.Aps/ApsLog.cs` defines `IApsLogger` + a static `ApsLog` facade. The library never references MAUI — this is the seam. `MauiProgram.CreateMauiApp()` registers `ApsLogBridge` as the sink at startup.
 - `Logger.cs` (iOS app, static) sits in front of the singleton `SessionLogger` so call sites stay terse: `Logger.Info("aps.upload", "…")`. Tees to `Debug.WriteLine` too so it shows up in VS Output when attached.
-- **Verbose nav logging toggle** in Settings (default ON). When OFF, `apsDiag` messages whose body starts with `nav.` are dropped at the bridge. Diagnostic dumps (`fit:`, `fit.frame:`, APS HTTP, app lifecycle, file/tab/settings) are always logged.
+- **Verbose nav logging toggle** in Settings (default OFF). When OFF, `apsDiag` messages whose body starts with `nav.` are dropped at the bridge. Diagnostic dumps (`fit:`, `fit.frame:`, APS HTTP, app lifecycle, file/tab/settings) are always logged.
 - **DiagnosticsPage** (`Views/DiagnosticsPage.xaml(.cs)` + `ViewModels/DiagnosticsViewModel.cs`) is a master/detail UI: session list on the left, read-only `Editor` (UITextView-backed) on the right for tap-to-select text. Toolbar buttons: **Share** (iOS share sheet via `Share.Default.RequestAsync`), **Export all** (zips the whole `logs/` dir to `CacheDirectory` and shares), **Delete** (per file, active session protected), **Clear all (keep active)**. Auto-selects the newest session on open. Reachable from SettingsPage → Troubleshooting.
 
 ## NwdViewer.Aps local patches (beyond error-message surfacing)

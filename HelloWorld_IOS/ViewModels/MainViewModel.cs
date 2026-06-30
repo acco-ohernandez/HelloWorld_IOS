@@ -32,6 +32,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Show the determinate progress bar only when busy but NOT mid-translate.</summary>
     public bool ShowDeterminateProgress => IsBusy && !IsTranslating;
 
+    /// <summary>Version + compile-time stamp shown in the status bar to confirm the running build.</summary>
+    public string BuildStamp => BuildInfo.Stamp;
+
     public ObservableCollection<TabViewModel> Tabs { get; } = [];
 
     public MainViewModel(CredentialStore credentials, Func<ApsCredentials, ApsServices> apsFactory)

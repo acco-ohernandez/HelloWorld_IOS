@@ -55,7 +55,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- Config ----------------------------------------------------------------
-$MacHost    = '172.31.29.117' # '192.168.1.139'
+#$MacHost    = '192.168.1.139' #When Working from the home
+$MacHost    = '172.31.29.122' # When Working from the office
 $MacUser    = 'orlandohernandez'
 $SshKey     = "$env:USERPROFILE\.ssh\id_ed25519_mac"
 $KnownHosts = "$env:TEMP\known_hosts_mac"

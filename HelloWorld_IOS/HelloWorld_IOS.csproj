@@ -80,6 +80,11 @@
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug'">
 		<CodesignKey>Apple Development: orlando2503@gmail.com (97JK54NP2N)</CodesignKey>
 		<CodesignProvision>iOS Team Provisioning Profile: com.accoes.nwd3dviewer</CodesignProvision>
+		<!-- The installed Microsoft.iOS workload (26.5) is newer than the Mac's Xcode 26.4.1
+		     (iOS 26.4 SDK), which fails the native linker (MT0180/MT2301). "Link Framework SDKs
+		     Only" trims the framework SDK so no iOS-26.5-only APIs are referenced — this app
+		     uses none. Remove this once Xcode on the Mac is upgraded to 26.5. -->
+		<MtouchLink>SdkOnly</MtouchLink>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(TargetFramework)'=='net10.0-ios'">
 	  <ProvisioningType>manual</ProvisioningType>
@@ -134,6 +139,17 @@
 
 	<ItemGroup>
 	  <ProjectReference Include="..\NwdViewer.Aps\NwdViewer.Aps.csproj" />
+	</ItemGroup>
+
+	<!-- Build stamp: injects the compile time (build machine local time, Pacific) as assembly
+	     metadata so the running app can display it (status bar + app.start log) and you can
+	     confirm at a glance that the latest build actually deployed. Re-evaluated each build;
+	     always refreshed on Rebuild. Read at runtime via Services/BuildInfo.cs. -->
+	<ItemGroup>
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+			<_Parameter1>BuildTimestamp</_Parameter1>
+			<_Parameter2>$([System.DateTime]::Now.ToString('yyyy-MM-dd HH:mm'))</_Parameter2>
+		</AssemblyAttribute>
 	</ItemGroup>
 
 </Project>

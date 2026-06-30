@@ -93,17 +93,21 @@
         </Grid>
 
         <!-- Row 3: Status bar -->
-        <Grid Grid.Row="3" BackgroundColor="#181818" Padding="10,4" ColumnDefinitions="*,120">
+        <Grid Grid.Row="3" BackgroundColor="#181818" Padding="10,4" ColumnDefinitions="*,Auto,120">
             <Label Grid.Column="0" Text="{Binding StatusText}"
                    TextColor="#ccc" FontSize="11" VerticalOptions="Center" />
+            <!-- Build stamp: version + compile time, so you can confirm the running build is current. -->
+            <Label Grid.Column="1" Text="{Binding BuildStamp}"
+                   TextColor="#666" FontSize="10" VerticalOptions="Center"
+                   Margin="0,0,10,0" LineBreakMode="NoWrap" />
             <!-- Determinate bar for upload/offline-load (real percent). During the APS
                  translate phase APS reports 0% almost the whole time, so we hide the bar and
                  show an indeterminate spinner instead (the status text carries elapsed time). -->
-            <ProgressBar Grid.Column="1"
+            <ProgressBar Grid.Column="2"
                          Progress="{Binding ProgressPercent, Converter={StaticResource ProgressConverter}}"
                          IsVisible="{Binding ShowDeterminateProgress}"
                          ProgressColor="#3c7adc" />
-            <ActivityIndicator Grid.Column="1"
+            <ActivityIndicator Grid.Column="2"
                                IsRunning="{Binding IsTranslating}"
                                IsVisible="{Binding IsTranslating}"
                                Color="#3c7adc" HeightRequest="18" WidthRequest="18"

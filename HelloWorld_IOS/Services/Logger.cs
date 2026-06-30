@@ -32,15 +32,14 @@ public static class Logger
     public const string VerboseNavLoggingKey = "NwdViewer.VerboseNavLogging";
 
     /// <summary>
-    /// When true (default), nav.* lines from the JS viewer (button presses,
-    /// theme toggles, panel collapses) get written to the session log.
-    /// When false, those lines are dropped at the bridge before reaching
-    /// SessionLogger. Diagnostic dumps (fit:, fit.frame:, aps.* HTTP) are
-    /// unaffected.
+    /// When true, nav.* lines from the JS viewer (button presses, theme toggles,
+    /// panel collapses) get written to the session log. When false (default),
+    /// those lines are dropped at the bridge before reaching SessionLogger.
+    /// Diagnostic dumps (fit:, fit.frame:, aps.* HTTP) are unaffected.
     /// </summary>
     public static bool VerboseNavLogging
     {
-        get => Preferences.Default.Get(VerboseNavLoggingKey, true);
+        get => Preferences.Default.Get(VerboseNavLoggingKey, false);
         set => Preferences.Default.Set(VerboseNavLoggingKey, value);
     }
 
