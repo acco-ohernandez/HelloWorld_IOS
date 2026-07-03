@@ -68,21 +68,48 @@ public partial class ViewerPage : ContentPage
     private void OnPageSizeChanged(object? sender, EventArgs e) => ApplyOrientationLayout();
 
     private void OnAppResumed()
-        => Dispatcher.Dispatch(() => _bridge.CheckHealth());
+    {
+        Logger.Verbose("app.lifecycle", "resume — checkHealth posted to viewer");
+        Dispatcher.Dispatch(() => _bridge.CheckHealth());
+    }
+
+    // Crash-loop breaker: iOS jettisons the WebView content process on memory pressure.
+    // Reloading a too-heavy model just gets it killed again (observed: a 476 MB federated
+    // NWD killed every ~40s). After MaxTerminationsInWindow kills inside TerminationWindow,
+    // stop auto-reloading the model and let the user decide.
+    private static readonly TimeSpan TerminationWindow = TimeSpan.FromMinutes(2);
+    private const int MaxTerminationsInWindow = 3;
+    private readonly List<DateTime> _terminations = [];
+    private bool _suspendModelRehydrate;
 
     private void OnWebContentProcessTerminated(object? sender, EventArgs e)
     {
         // The handler is already reloading viewer.html. Reset the bridge so messages
         // re-queue until the fresh page is ready, then re-hydrate the open tabs.
-        Logger.Warn("app.lifecycle", "WebView content process terminated; reloading + re-hydrating tabs");
+        var now = DateTime.UtcNow;
+        _terminations.Add(now);
+        _terminations.RemoveAll(t => now - t > TerminationWindow);
+        if (_terminations.Count >= MaxTerminationsInWindow && !_suspendModelRehydrate)
+        {
+            _suspendModelRehydrate = true;
+            Logger.Error("app.lifecycle",
+                $"WebView content process terminated {_terminations.Count}x in {TerminationWindow.TotalMinutes:F0} min — " +
+                "suspending model auto-reload (model likely exceeds WebView memory)");
+        }
+        else
+        {
+            Logger.Warn("app.lifecycle", "WebView content process terminated; reloading + re-hydrating tabs");
+        }
         _bridge.PrepareForReload();
     }
 
     private void RehydrateTabs()
     {
+        var loadModels = !_suspendModelRehydrate;
         foreach (var tab in _vm.Tabs)
         {
             _bridge.CreateTab(tab.TabId, tab.Mode);
+            if (!loadModels) continue;   // tabs stay in the strip; models wait for Retry
             if (tab.Mode == ViewModels.TabMode.Aps)
             {
                 var urn = tab.Urn;
@@ -99,7 +126,27 @@ public partial class ViewerPage : ContentPage
             }
         }
         if (_vm.ActiveTab is not null) _bridge.SwitchTab(_vm.ActiveTab.TabId);
-        Logger.Info("app.lifecycle", $"re-hydrated {_vm.Tabs.Count} tab(s) after WebView reload");
+        Logger.Info("app.lifecycle", $"re-hydrated {_vm.Tabs.Count} tab(s) after WebView reload (models={(loadModels ? "reloaded" : "suspended")})");
+
+        if (!loadModels) _ = OfferModelRetryAsync();
+    }
+
+    private async Task OfferModelRetryAsync()
+    {
+        _vm.StatusText = "Viewer ran out of memory repeatedly — model reload paused.";
+        Logger.Warn("app.lifecycle", "'Model too heavy' alert shown (crash-loop breaker tripped)");
+        var retry = await DisplayAlertAsync("Model too heavy",
+            "The viewer was killed by iOS several times in a row — this model is likely " +
+            "exceeding the WebView's memory limit while navigating.\n\n" +
+            "Retry reloads it; if it keeps crashing, close other apps or try a smaller model.",
+            "Retry", "Not now");
+        Logger.Info("app.lifecycle", $"'Model too heavy' alert: user chose {(retry ? "Retry" : "Not now")}");
+        if (retry)
+        {
+            _suspendModelRehydrate = false;
+            _terminations.Clear();
+            RehydrateTabs();
+        }
     }
 
     private void ApplyOrientationLayout()

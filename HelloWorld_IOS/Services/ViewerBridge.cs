@@ -161,10 +161,13 @@ public sealed class ViewerBridge
                 case "apsDiag":
                 {
                     var diagMsg = GetStringOrNull(doc.RootElement, "msg") ?? "";
-                    // Gate nav.* events (button presses, theme toggles, panel
-                    // collapses) on the Settings toggle. Everything else
-                    // (fit:, fit.frame:, pre-load, post-load, …) is unaffected.
-                    if (diagMsg.StartsWith("nav.", StringComparison.Ordinal) && !Logger.VerboseNavLogging)
+                    // Gate nav.* (button presses, theme toggles, panel collapses) and
+                    // vrb.* (camera start/stop, load progress ticks, tab-switch internals)
+                    // on the session-only Verbose Logging toggle. Everything else
+                    // (fit:, pre/post-load, watchdog, milestones, …) is unaffected.
+                    if (!Logger.VerboseLogging &&
+                        (diagMsg.StartsWith("nav.", StringComparison.Ordinal) ||
+                         diagMsg.StartsWith("vrb.", StringComparison.Ordinal)))
                         break;
                     Logger.Info("viewer.js", $"apsDiag: {diagMsg}");
                     break;

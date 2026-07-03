@@ -570,6 +570,12 @@
     let apsViewer = null;
     let apsInitialized = false;
     let currentApsTabId = null;
+    let apsWdDeadline = 0;      // watchdog: when >0, a presented frame is expected before this timestamp
+    let apsWdKicks = 0;         // watchdog: total forced invalidates this JS session
+    let apsLoadStartTs = 0;     // load milestones: performance.now() at loadApsTab entry
+    let apsLoadInFlight = null; // '<tabId>:<urn>' while a loadDocumentNode is pending — dedupes double loads
+    let apsProgressBucket = -1; // last 25%-bucket logged by the verbose load-progress tick
+    let apsGeomLoaded = false;  // true once GEOMETRY_LOADED fires — silences post-load progress flapping
 
     // Lazy-load the Autodesk APS Viewer SDK (CSS + JS) only when first needed.
     // Cached as a single Promise so concurrent callers wait on the same load.
@@ -600,6 +606,101 @@
           if (!apsViewer) {
             apsViewer = new Autodesk.Viewing.GuiViewer3D(apsCt);
             apsViewer.start();
+            // ---- Memory / render-cost reduction (iPad WKWebView) ----
+            // iOS kills the WebView content process on memory pressure; a large federated
+            // NWD (476 MB reference model) tripped that ~40s into navigation, looping the
+            // crash-recovery reload. Trim the biggest consumers:
+            //   - quality level: ambient shadows + AA off (big framebuffer + pass savings)
+            //   - ground shadow/reflection off (extra render targets)
+            //   - progressive rendering + optimize-navigation: lighter frames while moving
+            //   - pixel ratio capped at 1.5 (retina DPR=2 → 4x framebuffer pixels; 1.5 ≈ half)
+            try {
+              apsViewer.setQualityLevel(false, false);
+              apsViewer.setGroundShadow(false);
+              apsViewer.setGroundReflection(false);
+              apsViewer.setProgressiveRendering(true);
+              apsViewer.setOptimizeNavigation(true);
+              const glr = apsViewer.impl?.glrenderer?.();
+              if (glr && window.devicePixelRatio > 1.5) {
+                glr.setPixelRatio(1.5);
+                apsViewer.resize();
+              }
+              postHost({ type: 'apsDiag', msg: 'aps memory trims applied (quality/shadows/pixelRatio)' });
+            } catch (e) { postHost({ type: 'apsDiag', msg: 'aps memory trims err: ' + e.message }); }
+            // ---- Render-stall watchdog (iPad) ----
+            // 2026-07-02 field tests: (1) during pan/zoom the canvas stutters, goes white
+            // and stays white until something forces a redraw (no webglcontextlost, no
+            // process kill — progressive rendering defers the full frame and under load
+            // it never lands); (2) after a crash-recovery reload, the canvas can come up
+            // blank AT REST, which a moving-camera-only watchdog never catches.
+            // Deadline model: whenever we EXPECT a frame (camera moving → within 1.2 s;
+            // model just finished loading → within 5 s), arm apsWdDeadline. A presented
+            // frame at rest disarms it (the viewer legitimately stops rendering when
+            // idle — "no frames while idle" is normal, not a stall). If the deadline
+            // passes, force a full invalidate (same effect as the Home button) and keep
+            // kicking every 2 s until a frame lands. Log kicks 1-20, then every 10th.
+            try {
+              const FINAL_FRAME_EV = Autodesk.Viewing.FINAL_FRAME_RENDERED_EVENT || 'finalFrameRendered';
+              const RENDER_PRESENTED_EV = Autodesk.Viewing.RENDER_PRESENTED_EVENT || 'renderPresented';
+              let wdNavActive = false, wdLastNav = 0;
+              const wdPresented = () => {
+                apsWdDeadline = wdNavActive ? performance.now() + 1200 : 0;
+              };
+              apsViewer.addEventListener(FINAL_FRAME_EV, wdPresented);
+              apsViewer.addEventListener(RENDER_PRESENTED_EV, wdPresented);
+              apsViewer.addEventListener(Autodesk.Viewing.CAMERA_CHANGE_EVENT, () => {
+                const now = performance.now();
+                wdLastNav = now;
+                apsWdDeadline = Math.max(apsWdDeadline, now + 1200);
+                if (!wdNavActive) { wdNavActive = true; postHost({ type: 'apsDiag', msg: 'vrb.camera: move start' }); }
+              });
+              setInterval(() => {
+                const now = performance.now();
+                if (wdNavActive && now - wdLastNav > 2000) {
+                  wdNavActive = false;
+                  postHost({ type: 'apsDiag', msg: 'vrb.camera: move stop' });
+                }
+                if (!apsWdDeadline || now < apsWdDeadline) return;
+                if (currentApsTabId == null || !document.body.classList.contains('aps-active')) { apsWdDeadline = 0; return; }
+                apsWdDeadline = now + 2000; // keep kicking until a frame actually lands
+                try { apsViewer.impl?.invalidate?.(true, true, true); } catch (_) {}
+                apsWdKicks++;
+                if (apsWdKicks <= 20 || apsWdKicks % 10 === 0)
+                  postHost({ type: 'apsDiag', msg: `render stall detected — forced invalidate (#${apsWdKicks}, ${wdNavActive ? 'navigating' : 'idle'})` });
+              }, 600);
+              postHost({ type: 'apsDiag', msg: 'render-stall watchdog armed' });
+            } catch (e) { postHost({ type: 'apsDiag', msg: 'watchdog wire err: ' + e.message }); }
+            // ---- Load milestones (always logged; cheap, once per model load) ----
+            // geometry-loaded + object-tree-created durations tell us what the geometry
+            // vs the property DB actually cost on each model — the propdb line is the
+            // one to watch for memory-kill correlation on big federated NWDs.
+            try {
+              const sinceLoad = () => apsLoadStartTs ? ((performance.now() - apsLoadStartTs) / 1000).toFixed(1) + 's' : '?';
+              apsViewer.addEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, () => {
+                apsGeomLoaded = true;
+                let frags = '';
+                try { const c = apsViewer.model?.getFragmentList?.()?.getCount?.(); if (c) frags = ` · fragments=${c.toLocaleString()}`; } catch (_) {}
+                postHost({ type: 'apsDiag', msg: `geometry loaded in ${sinceLoad()}${frags}` });
+              });
+              apsViewer.addEventListener(Autodesk.Viewing.OBJECT_TREE_CREATED_EVENT, () => {
+                postHost({ type: 'apsDiag', msg: `object tree (property db) ready in ${sinceLoad()} — Model Browser can populate` });
+              });
+              apsViewer.addEventListener(Autodesk.Viewing.OBJECT_TREE_UNAVAILABLE_EVENT, () => {
+                postHost({ type: 'apsDiag', msg: 'object tree UNAVAILABLE — Model Browser will not populate' });
+              });
+              apsViewer.addEventListener(Autodesk.Viewing.PROGRESS_UPDATE_EVENT, (ev) => {
+                // Only meaningful while the initial geometry stream is in flight. After
+                // that the event flaps 0%↔100% on every progressive re-render pass
+                // (2026-07-02 21:45 log: ~500 spam lines in a 6-minute session).
+                if (apsGeomLoaded) return;
+                const pct = (ev && ev.percent) | 0;
+                const bucket = Math.floor(pct / 25);
+                if (bucket !== apsProgressBucket) {
+                  apsProgressBucket = bucket;
+                  postHost({ type: 'apsDiag', msg: `vrb.load-progress: ${pct}%` });
+                }
+              });
+            } catch (e) { postHost({ type: 'apsDiag', msg: 'milestone wire err: ' + e.message }); }
             apsViewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, (ev) => {
               const dbId = ev.dbIdArray && ev.dbIdArray[0];
               if (typeof dbId === 'number' && currentApsTabId != null) {
@@ -630,6 +731,18 @@
       }).catch((err) => { postErr('aps-sdk-load', err, currentApsTabId); setStatus('APS SDK load failed (offline?)'); });
     }
     function loadApsTab(tabId, urn, token) {
+      // Dedupe guard: after a crash-recovery rehydrate, 'loadAps' + 'switchTab' both
+      // arrived for the same tab and the 476 MB model loaded TWICE concurrently
+      // (observed 2026-07-02: doubled pre/post-load lines right after a memory kill).
+      const flightKey = tabId + ':' + urn;
+      if (apsLoadInFlight === flightKey) {
+        postHost({ type: 'apsDiag', msg: `duplicate load for tab ${tabId} skipped (already in flight)` });
+        return;
+      }
+      apsLoadInFlight = flightKey;
+      apsLoadStartTs = performance.now();
+      apsProgressBucket = -1;
+      apsGeomLoaded = false;
       currentApsTabId = tabId;
       const go = () => {
         // Unload any previously loaded model so memory doesn't accumulate across APS tab switches
@@ -649,8 +762,17 @@
 
           Autodesk.Viewing.Document.load('urn:' + urn, (doc) => {
             const m = doc.getRoot().getDefaultGeometry();
-            apsViewer.loadDocumentNode(doc, m)
+            // skipExternalIds: the external-ID table of a large federated NWD (a long
+            // Navisworks path string per element) is the bulk of the property DB's wasm
+            // footprint — a main driver of iOS jettisoning the WebView content process.
+            // We never use external IDs: selection posts dbIds to the host, which fetches
+            // properties via the Model Derivative REST API (MainViewModel.LoadApsPropertiesAsync).
+            // NOTE: do NOT use skipPropertyDb:true here — the viewer's own Model Browser
+            // builds its tree from the property DB and spins on "Loading" forever without it
+            // (2026-07-02 field report, reproduced on small models too).
+            apsViewer.loadDocumentNode(doc, m, { skipExternalIds: true })
               .then(() => {
+                apsLoadInFlight = null;
                 const w2 = apsCt.clientWidth, h2 = apsCt.clientHeight;
                 postHost({ type: 'apsDiag', msg: `post-load apsCt=${w2}x${h2}` });
                 try {
@@ -664,10 +786,14 @@
                     catch (e) { postHost({ type: 'apsDiag', msg: 'restoreState err: ' + e.message }); }
                   }
                 } catch (e) { postHost({ type: 'apsDiag', msg: 'resize err: ' + e.message }); }
+                // Expect a first presented frame within 5 s — catches the blank-at-rest
+                // canvas after a crash-recovery reload (watchdog kicks it back to life).
+                apsWdDeadline = performance.now() + 5000;
                 postHost({ type: 'loaded', tabId });
               })
-              .catch((err) => { postErr('aps-load-model', err, tabId); setStatus('APS load failed.'); });
+              .catch((err) => { apsLoadInFlight = null; postErr('aps-load-model', err, tabId); setStatus('APS load failed.'); });
           }, (code, msg) => {
+            apsLoadInFlight = null;
             postErr('aps-doc-load', new Error(`[${code}] ${msg}`), tabId);
             setStatus('APS error: ' + msg);
           });
@@ -948,12 +1074,26 @@
     function closeTab(tabId) {
       const st = tabs.get(tabId);
       if (!st) return;
+      if (st.mode === 'aps') {
+        if (apsWdKicks > 0) postHost({ type: 'apsDiag', msg: `watchdog total forced invalidates this session: ${apsWdKicks}` });
+        if (currentApsTabId === tabId && apsViewer) {
+          // Free the singleton viewer's model memory as soon as the tab closes —
+          // previously the model stayed resident until the next APS load evicted it.
+          try { (apsViewer.getVisibleModels?.() || []).forEach((m) => { try { apsViewer.unloadModel(m); } catch (_) {} }); } catch (_) {}
+          currentApsTabId = null;
+          apsWdDeadline = 0;
+        }
+      }
       st.dispose();
       tabs.delete(tabId);
       if (activeTabId === tabId) { activeTabId = null; updateUiFromActiveTab(); }
     }
     function switchTab(tabId) {
       if (!tabs.has(tabId)) return;
+      // Idempotent: after a crash-recovery rehydrate the host sends 'loadAps' (which
+      // switches internally) followed by 'switchTab' for the same tab — without this
+      // early-out the APS model started loading a second time, concurrently.
+      if (tabId === activeTabId) return;
       // Save camera of the previous active tab
       const prev = getActive();
       if (prev && prev.mode === 'offline') {
@@ -980,7 +1120,21 @@
       } else {
         document.body.classList.add('aps-active');
         controls.enabled = false;
-        if (st.urn && st.token) { loadApsTab(tabId, st.urn, st.token); }
+        if (st.urn && st.token) {
+          // If this tab's model is already the one on screen (offline→APS round trip),
+          // don't unload + reload it — a large NWD reload costs minutes and a memory
+          // spike. Just resize/redraw into the re-shown container.
+          const alreadyShowing = currentApsTabId === tabId && apsViewer &&
+                                 (apsViewer.getVisibleModels?.() || []).length > 0;
+          if (alreadyShowing) {
+            postHost({ type: 'apsDiag', msg: `vrb.switchTab: tab ${tabId} model already loaded — redraw only` });
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              try { apsViewer.resize(); apsViewer.impl?.invalidate?.(true, true, true); } catch (_) {}
+            }));
+          } else {
+            loadApsTab(tabId, st.urn, st.token);
+          }
+        }
       }
       updateUiFromActiveTab();
     }

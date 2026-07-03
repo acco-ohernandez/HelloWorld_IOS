@@ -21,6 +21,7 @@ namespace HelloWorld_IOS.Services;
 ///   aps.metadata    metadata fetch
 ///   aps.properties  object-properties fetch
 ///   aps.error       full 4xx/5xx response bodies
+///   app.memory      iOS memory warnings (precede WebView content-process kills)
 ///   bridge.error    JS bridge parse failures
 ///   viewer.js       JS-side errors / diag messages
 /// </summary>
@@ -28,19 +29,21 @@ public static class Logger
 {
     private static SessionLogger? _session;
 
-    /// <summary>Preferences key for the "verbose navigation logging" toggle. Default true.</summary>
-    public const string VerboseNavLoggingKey = "NwdViewer.VerboseNavLogging";
-
     /// <summary>
-    /// When true, nav.* lines from the JS viewer (button presses, theme toggles,
-    /// panel collapses) get written to the session log. When false (default),
-    /// those lines are dropped at the bridge before reaching SessionLogger.
-    /// Diagnostic dumps (fit:, fit.frame:, aps.* HTTP) are unaffected.
+    /// Session-only "Verbose Logging" toggle (Settings page). Deliberately NOT
+    /// persisted: resets to false on every app launch so field devices never
+    /// accumulate noisy logs from a toggle someone forgot on. When true, nav.*
+    /// and vrb.* lines from the JS viewer (button presses, camera start/stop,
+    /// load progress ticks) get written to the session log; when false they are
+    /// dropped at the bridge. Diagnostic dumps (fit:, watchdog, load milestones,
+    /// aps.* HTTP) are always logged regardless.
     /// </summary>
-    public static bool VerboseNavLogging
+    public static bool VerboseLogging { get; set; }
+
+    /// <summary>Log an Info line only while the session-only Verbose Logging toggle is on.</summary>
+    public static void Verbose(string category, string message)
     {
-        get => Preferences.Default.Get(VerboseNavLoggingKey, false);
-        set => Preferences.Default.Set(VerboseNavLoggingKey, value);
+        if (VerboseLogging) Info(category, message);
     }
 
     public static void Init(SessionLogger session) => _session = session;

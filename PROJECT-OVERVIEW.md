@@ -26,7 +26,7 @@ The trade-off is a more complex toolchain (Windows Visual Studio + Pair-to-Mac +
 - **three.js 0.149 + web-ifc 0.0.44** (vendored offline) — does the actual 3D rendering in JavaScript
 - **Autodesk Platform Services (APS)** — cloud translation for Navisworks files; auth + upload + translate + view
 - **iOS Keychain** (via MAUI `SecureStorage`) — stores APS credentials per-device
-- **NSUserDefaults** (via MAUI `Preferences`) — stores non-secret toggles (e.g. Verbose navigation logging)
+- **NSUserDefaults** (via MAUI `Preferences`) — available for non-secret settings (currently unused: the Verbose Logging toggle is deliberately session-only/in-memory so it resets OFF each launch)
 - **Session-file logger** (`SessionLogger`) — per-launch `.log` file under `AppDataDirectory/logs/`, 50-file rolling retention, secret redaction, surfaced via an in-app DiagnosticsPage with iOS-share-sheet export
 - **GitHub** — source control. `master` is the canonical branch; `Dev_01_Release_Testing` and `Dev_02_NWD_403_Fix` are kept in sync with master post-merge.
 
@@ -98,7 +98,7 @@ Triggered by the NWD 403 investigation, but the infrastructure stands on its own
 - **Gesture parity with APS viewer**: offline (Three.js OrbitControls) now uses 1-finger pan + 2-finger orbit+pinch, matching the Autodesk Viewer / Navisworks Freedom iPad convention. Was 1-finger rotate / 2-finger pinch+pan.
 - **Fit fix (canvas off-center)**: `renderer.setSize(w, h)` now lets three.js sync CSS dimensions to the drawing buffer. The previous `setSize(w, h, false)` left CSS at the buffer-size attribute (2× the container on retina) — `overflow: hidden` clipped ¾ of the canvas, making centered renders appear in a corner. Single-line fix; one-character bug.
 - **Fit robustness**: bounding-box outlier rejection is now two-pass (iterative center cluster + extent filter) to handle Revit-exported FBXs with large site/origin meshes that drag the bbox center off the visible geometry.
-- **Verbose-nav-logging toggle** in Settings (default OFF) gates the `nav.*` event lines so the log stays quiet for normal use while keeping diagnostic dumps; turn it on when you need button/nav tracing.
+- **Verbose Logging toggle** in Settings gates the `nav.*` (button taps) and `vrb.*` (camera start/stop, load-progress ticks, tab-switch internals) event lines so the log stays quiet for normal use while keeping diagnostic dumps. Session-only: OFF at every app launch, applies instantly when flipped, never persisted. Always-on regardless of the toggle: errors, APS HTTP, app lifecycle, `app.memory` (iOS memory warnings), render-stall watchdog kicks, and per-model load milestones (property-db/geometry durations + fragment count).
 
 ## Phase 3 decision still pending
 

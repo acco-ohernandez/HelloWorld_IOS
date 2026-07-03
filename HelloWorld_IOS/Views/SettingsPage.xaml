@@ -67,14 +67,14 @@
 
                 <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
                     <Label Grid.Column="0"
-                           Text="Verbose navigation logging"
+                           Text="Verbose logging"
                            FontSize="13" TextColor="White" VerticalOptions="Center" />
                     <Switch Grid.Column="1"
-                            IsToggled="{Binding VerboseNavLogging, Mode=TwoWay}"
+                            IsToggled="{Binding VerboseLogging, Mode=TwoWay}"
                             OnColor="#3c7adc"
                             ThumbColor="White" />
                 </Grid>
-                <Label Text="When on, button taps (view presets, Fit, Bake, theme, panel toggle) are written to the session log. Diagnostic dumps (Fit math, APS HTTP calls) are always logged regardless. Saved with the Save button."
+                <Label Text="When on, extra detail is written to the session log: button taps, camera move start/stop, load progress ticks, tab-switch internals. Applies immediately and turns itself OFF on every app launch. Errors, APS HTTP calls, and load milestones are always logged regardless."
                        FontSize="11" TextColor="#888" LineBreakMode="WordWrap" />
             </VerticalStackLayout>
         </ScrollView>

@@ -17,7 +17,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string bucketKey = string.Empty;
     [ObservableProperty] private string statusText = string.Empty;
     [ObservableProperty] private bool isBusy;
-    [ObservableProperty] private bool verboseNavLogging = true;
+    // Session-only: mirrors Logger.VerboseLogging (never persisted; OFF each launch).
+    [ObservableProperty] private bool verboseLogging;
 
     public bool IsValid =>
         !string.IsNullOrWhiteSpace(ClientId) &&
@@ -35,7 +36,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Pre-fill the form from existing keychain entries + Preferences.</summary>
     public async Task LoadAsync()
     {
-        VerboseNavLogging = Logger.VerboseNavLogging;
+        VerboseLogging = Logger.VerboseLogging;
         var creds = await _credentials.LoadAsync();
         if (creds is null) return;
         ClientId = creds.ClientId;
@@ -73,9 +74,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 
             await _credentials.SaveAsync(new ApsCredentials(
                 ClientId.Trim(), ClientSecret.Trim(), BucketKey.Trim()));
-            // Persist the nav-logging toggle alongside credentials. Stored in
-            // Preferences (NSUserDefaults), not the keychain - it isn't a secret.
-            Logger.VerboseNavLogging = VerboseNavLogging;
             return true;
         }
         catch (Exception ex)
@@ -88,6 +86,16 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    // Applies immediately when the switch is flipped — no Save needed, session-only.
+    partial void OnVerboseLoggingChanged(bool value)
+    {
+        // LoadAsync mirrors the current flag into a fresh VM every time the Settings
+        // page opens — only a real user flip (value differs from the flag) is logged.
+        if (Logger.VerboseLogging == value) return;
+        Logger.VerboseLogging = value;
+        Logger.Info("app.settings", $"verbose logging {(value ? "ON" : "OFF")} (session only)");
     }
 
     partial void OnClientIdChanged(string value)     => StatusText = string.Empty;
