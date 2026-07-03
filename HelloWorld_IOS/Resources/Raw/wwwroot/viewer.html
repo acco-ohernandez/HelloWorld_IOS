@@ -571,7 +571,8 @@
     let apsInitialized = false;
     let currentApsTabId = null;
     let apsWdDeadline = 0;      // watchdog: when >0, a presented frame is expected before this timestamp
-    let apsWdKicks = 0;         // watchdog: total forced invalidates this JS session
+    let apsWdKicks = 0;         // watchdog: forced invalidates with NO frame since last camera move (real stalls)
+    let apsWdRefreshes = 0;     // watchdog: routine post-navigation refresh kicks (a frame had already landed)
     let apsLoadStartTs = 0;     // load milestones: performance.now() at loadApsTab entry
     let apsLoadInFlight = null; // '<tabId>:<urn>' while a loadDocumentNode is pending — dedupes double loads
     let apsProgressBucket = -1; // last 25%-bucket logged by the verbose load-progress tick
@@ -642,9 +643,10 @@
             try {
               const FINAL_FRAME_EV = Autodesk.Viewing.FINAL_FRAME_RENDERED_EVENT || 'finalFrameRendered';
               const RENDER_PRESENTED_EV = Autodesk.Viewing.RENDER_PRESENTED_EVENT || 'renderPresented';
-              let wdNavActive = false, wdLastNav = 0;
+              let wdNavActive = false, wdLastNav = 0, wdLastPresent = 0;
               const wdPresented = () => {
-                apsWdDeadline = wdNavActive ? performance.now() + 1200 : 0;
+                wdLastPresent = performance.now();
+                apsWdDeadline = wdNavActive ? wdLastPresent + 1200 : 0;
               };
               apsViewer.addEventListener(FINAL_FRAME_EV, wdPresented);
               apsViewer.addEventListener(RENDER_PRESENTED_EV, wdPresented);
@@ -664,9 +666,20 @@
                 if (currentApsTabId == null || !document.body.classList.contains('aps-active')) { apsWdDeadline = 0; return; }
                 apsWdDeadline = now + 2000; // keep kicking until a frame actually lands
                 try { apsViewer.impl?.invalidate?.(true, true, true); } catch (_) {}
-                apsWdKicks++;
-                if (apsWdKicks <= 20 || apsWdKicks % 10 === 0)
-                  postHost({ type: 'apsDiag', msg: `render stall detected — forced invalidate (#${apsWdKicks}, ${wdNavActive ? 'navigating' : 'idle'})` });
+                // Classify: no frame since the last camera move = a real stall (the
+                // white-screen case — always log). A frame DID land = this is the
+                // routine post-navigation refresh kick that guarantees a final full
+                // frame after movement (2026-07-02 22:07 log: it fires ~1 s after
+                // every move stop, even on a 15-fragment model — behavior is wanted,
+                // but logging it as a "stall" made real stalls indistinguishable).
+                if (wdLastPresent <= wdLastNav) {
+                  apsWdKicks++;
+                  if (apsWdKicks <= 20 || apsWdKicks % 10 === 0)
+                    postHost({ type: 'apsDiag', msg: `render stall detected — forced invalidate (#${apsWdKicks}, ${wdNavActive ? 'navigating' : 'idle'})` });
+                } else {
+                  apsWdRefreshes++;
+                  postHost({ type: 'apsDiag', msg: `vrb.watchdog: post-nav refresh (#${apsWdRefreshes})` });
+                }
               }, 600);
               postHost({ type: 'apsDiag', msg: 'render-stall watchdog armed' });
             } catch (e) { postHost({ type: 'apsDiag', msg: 'watchdog wire err: ' + e.message }); }
@@ -1075,7 +1088,8 @@
       const st = tabs.get(tabId);
       if (!st) return;
       if (st.mode === 'aps') {
-        if (apsWdKicks > 0) postHost({ type: 'apsDiag', msg: `watchdog total forced invalidates this session: ${apsWdKicks}` });
+        if (apsWdKicks > 0 || apsWdRefreshes > 0)
+          postHost({ type: 'apsDiag', msg: `watchdog totals this session: stalls=${apsWdKicks} · post-nav refreshes=${apsWdRefreshes}` });
         if (currentApsTabId === tabId && apsViewer) {
           // Free the singleton viewer's model memory as soon as the tab closes —
           // previously the model stayed resident until the next APS load evicted it.
